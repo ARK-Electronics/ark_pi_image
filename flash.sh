@@ -8,10 +8,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/versions.env"
 STAGING="$SCRIPT_DIR/staging"
 
-IMG="${IMG:-$STAGING/ark-os-pi-${ARK_OS_VERSION}.img}"
+# Image name matches build.sh: ark-os-<target>-<version>.img. Pick a non-default target
+# with `TARGET=<target> ./flash.sh <device>`, or point at an image directly with IMG=.
+IMG="${IMG:-$STAGING/ark-os-${TARGET}-${ARK_OS_VERSION}.img}"
 DEV="${1:-}"
 
-[ -f "$IMG" ] || { echo "ERROR: image not found ($IMG). Run ./build.sh first." >&2; exit 1; }
+if [ ! -f "$IMG" ]; then
+    echo "ERROR: image not found ($IMG)." >&2
+    echo "       Build it with ./build.sh $TARGET, or set TARGET=/IMG= to pick another." >&2
+    if compgen -G "$STAGING/*.img" >/dev/null 2>&1; then
+        echo "       Images present in staging/:" >&2
+        for f in "$STAGING"/*.img; do echo "         $(basename "$f")" >&2; done
+    fi
+    exit 1
+fi
 
 if [ -z "$DEV" ]; then
     echo "Usage: ./flash.sh <device>     e.g. /dev/sda, /dev/mmcblk0"

@@ -1,0 +1,13 @@
+# "Just A Pi" carrier + Raspberry Pi Compute Module 5.  [STUB — not yet defined]
+#
+# Plain CM4/CM5 breakout, no onboard flight controller; not characterised yet, and
+# CM5's RP1 changes UART/fan handling vs CM4. To enable: populate the config.txt
+# overlays per the hardware docs (see targets/pi6x-cm4.target) and delete the
+# TARGET_STUB line below.
+
+TARGET_STUB=1
+TARGET_DESC="Just-A-Pi carrier + CM5  [stub]"
+TARGET_HOSTNAME="pi"
+
+CONFIG_TXT_DISABLE=()
+CONFIG_TXT_APPEND=""

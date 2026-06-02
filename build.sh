@@ -11,12 +11,42 @@ DOWNLOADS="$SCRIPT_DIR/downloads"
 STAGING="$SCRIPT_DIR/staging"
 export DOWNLOADS
 
+# Human-readable elapsed build time, e.g. "14m 32s" or "1h 03m 07s". Reads the bash
+# SECONDS builtin (seconds since this script started) so the final summary can report
+# how long the build took.
+fmt_duration() {
+    local s=$1 h m
+    h=$(( s / 3600 )); m=$(( (s % 3600) / 60 )); s=$(( s % 60 ))
+    if   (( h )); then printf '%dh %02dm %02ds' "$h" "$m" "$s"
+    elif (( m )); then printf '%dm %02ds' "$m" "$s"
+    else               printf '%ds' "$s"
+    fi
+}
+
+# Resolve the build target (carrier × compute module). Default lives in versions.env;
+# override per build with `./build.sh <target>` or `TARGET=<target> ./build.sh`.
+TARGET="${1:-$TARGET}"
+export TARGET
+TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
+[ -f "$TARGET_FILE" ] || {
+    echo "ERROR: unknown target '$TARGET' ($TARGET_FILE not found). Available targets:" >&2
+    for f in "$SCRIPT_DIR"/targets/*.target; do [ -e "$f" ] && echo "  $(basename "${f%.target}")" >&2; done
+    exit 1
+}
+# Refuse to build a stub target (carrier/module specifics not defined yet).
+if ( source "$TARGET_FILE" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
+    echo "ERROR: target '$TARGET' is a stub — its specifics aren't defined yet." >&2
+    echo "       Fill in $TARGET_FILE (copy targets/pi6x-cm4.target) and remove the TARGET_STUB line to build it." >&2
+    exit 1
+fi
+echo "==> Target: $TARGET"
+
 STOCK_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
 [ -f "$STOCK_XZ" ] || { echo "ERROR: stock image not found ($STOCK_XZ). Run ./setup.sh first." >&2; exit 1; }
 
 sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
 
-OUT_IMG="$STAGING/ark-os-pi-${ARK_OS_VERSION}.img"
+OUT_IMG="$STAGING/ark-os-${TARGET}-${ARK_OS_VERSION}.img"
 ROOTFS="$STAGING/rootfs"
 mkdir -p "$STAGING" "$ROOTFS"
 
@@ -87,5 +117,5 @@ cleanup
 LOOP=""
 trap - EXIT
 
-echo "==> Golden image ready: $OUT_IMG"
+echo "==> Golden image ready in $(fmt_duration "$SECONDS"): $OUT_IMG"
 echo "    Flash it with: ./flash.sh <device>   (e.g. /dev/sda or /dev/mmcblk0)"

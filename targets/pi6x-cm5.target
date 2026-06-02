@@ -1,0 +1,14 @@
+# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 5.  [STUB — not yet defined]
+#
+# CM5 specifics aren't pinned down yet. CM5 uses the RP1 I/O controller, which can
+# change UART numbering and fan/GPIO handling relative to CM4, so the cm4 overlays are
+# NOT assumed to carry over. To enable this target: copy the CONFIG_TXT_* structure
+# from targets/pi6x-cm4.target, adjust it for CM5 from the hardware docs, and delete
+# the TARGET_STUB line below.
+
+TARGET_STUB=1
+TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM5  [stub]"
+TARGET_HOSTNAME="pi6x"
+
+CONFIG_TXT_DISABLE=()
+CONFIG_TXT_APPEND=""

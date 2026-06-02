@@ -1,0 +1,36 @@
+# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4.
+#
+# The Pi6X Flow has an onboard ARKV6X flight controller wired directly to the Pi over
+# UART (uart3/uart4 with hardware CTS/RTS flow control) and USB; the carrier also
+# exposes two CSI camera ports and a cooling-fan header. These are the same config.txt
+# edits the flashing guide has users make by hand:
+#   docs.arkelectron.com/products/flight-controller/ark-pi6x-flow/flashing-guide/after-flashing-before-installing
+#
+# Sourced by provision.sh. A target may set: TARGET_DESC, TARGET_HOSTNAME (required),
+# CONFIG_TXT_DISABLE (array of stock directives to comment out), CONFIG_TXT_APPEND
+# (block appended verbatim under an ARK-OS marker).
+
+TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4"
+TARGET_HOSTNAME="pi6x"
+
+CONFIG_TXT_DISABLE=(
+    "camera_auto_detect=1"
+    "display_auto_detect=1"
+)
+
+CONFIG_TXT_APPEND=$(cat <<'EOF'
+# UART links to the onboard ARKV6X, with hardware flow control
+enable_uart=1
+dtoverlay=uart3,ctsrts
+dtoverlay=uart4,ctsrts
+# Carrier GPIO line initial states (per ARK hardware docs)
+gpio=25=op,dl
+gpio=27=op,dh
+gpio=26=op,dh
+# CSI cameras (IMX219 modules)
+dtoverlay=imx219,cam0
+dtoverlay=imx219,cam1
+# Cooling fan
+dtoverlay=gpio-fan,gpiopin=19
+EOF
+)
