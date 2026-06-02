@@ -45,4 +45,4 @@ else
     echo "         Pin a dated image + its sha256 in versions.env for production."
 fi
 
-echo "==> setup complete. Next: ./build.sh"
+echo "==> setup complete. Next: ./build.sh --provision   (omit --provision for a stock + target-config image, no ARK-OS)"
