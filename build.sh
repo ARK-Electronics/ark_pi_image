@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Build the ARK-OS Raspberry Pi golden image: copy the stock image, grow its root
-# partition, loop-mount it, bind-mount the kernel filesystems, and run provision.sh
-# inside an arm64 chroot. Produces staging/ark-os-pi-<ver>.img.
+# Build a Raspberry Pi golden image: copy the stock image, grow its root partition,
+# loop-mount it, bind-mount the kernel filesystems, and bake the target's hardware
+# config in an arm64 chroot (configure_target.sh). With --provision it additionally
+# installs the ARK-OS payload (provision.sh). Produces staging/<target>-<codename>.img,
+# or staging/<target>-<codename>-ark-os.img when built with --provision.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,9 +25,29 @@ fmt_duration() {
     fi
 }
 
-# Resolve the build target (carrier × compute module). Default lives in versions.env;
-# override per build with `./build.sh <target>` or `TARGET=<target> ./build.sh`.
-TARGET="${1:-$TARGET}"
+# Parse args: an optional target (carrier × compute module) plus flags. The target
+# default lives in versions.env; override per build with `./build.sh <target>` or
+# `TARGET=<target> ./build.sh`. --provision additionally installs the ARK-OS payload
+# (MAVSDK + the ark-os-pi deb); without it the image is stock Pi OS + target config.
+PROVISION=0
+_target_arg=""
+for arg in "$@"; do
+    case "$arg" in
+        --provision) PROVISION=1 ;;
+        -h|--help)
+            echo "Usage: $0 [target] [--provision]"
+            echo "  target:      a name from targets/*.target (default from versions.env: $TARGET)"
+            echo "  --provision: also install the ARK-OS payload (off by default)"
+            exit 0
+            ;;
+        -*) echo "ERROR: unknown option '$arg' (see '$0 --help')." >&2; exit 1 ;;
+        *)
+            [ -z "$_target_arg" ] || { echo "ERROR: multiple targets given ('$_target_arg', '$arg')." >&2; exit 1; }
+            _target_arg="$arg"
+            ;;
+    esac
+done
+TARGET="${_target_arg:-$TARGET}"
 export TARGET
 TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
 [ -f "$TARGET_FILE" ] || {
@@ -46,7 +68,13 @@ STOCK_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
 
 sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
 
-OUT_IMG="$STAGING/ark-os-${TARGET}-${ARK_OS_VERSION}.img"
+# Image name reflects provisioning state: <target>-<codename> for a stock + target-
+# config image, with -ark-os appended when --provision installed the ARK-OS payload.
+if [ "$PROVISION" -eq 1 ]; then
+    OUT_IMG="$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img"
+else
+    OUT_IMG="$STAGING/${TARGET}-${PIOS_RELEASE}.img"
+fi
 ROOTFS="$STAGING/rootfs"
 mkdir -p "$STAGING" "$ROOTFS"
 
@@ -108,9 +136,15 @@ sudo mount --bind /dev/pts "$ROOTFS/dev/pts"
 sudo cp -a "$ROOTFS/etc/resolv.conf" "$ROOTFS/etc/resolv.conf.prov-bak" 2>/dev/null || true
 sudo cp -f /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
-echo "==> Provisioning (arm64 chroot)"
 export ROOTFS_DIR="$ROOTFS"
-"$SCRIPT_DIR/provision.sh"
+echo "==> Configuring target (arm64 chroot)"
+"$SCRIPT_DIR/configure_target.sh"
+if [ "$PROVISION" -eq 1 ]; then
+    echo "==> Installing ARK-OS payload (arm64 chroot)"
+    "$SCRIPT_DIR/provision.sh"
+else
+    echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"
+fi
 
 echo "==> Unmounting"
 cleanup

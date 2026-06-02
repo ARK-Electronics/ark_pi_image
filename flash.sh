@@ -8,9 +8,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/versions.env"
 STAGING="$SCRIPT_DIR/staging"
 
-# Image name matches build.sh: ark-os-<target>-<version>.img. Pick a non-default target
-# with `TARGET=<target> ./flash.sh <device>`, or point at an image directly with IMG=.
-IMG="${IMG:-$STAGING/ark-os-${TARGET}-${ARK_OS_VERSION}.img}"
+# Image name matches build.sh: <target>-<codename>[-ark-os].img. Default to the
+# provisioned (ark-os) image if present, else the stock + target-config one. Pick a
+# non-default target with `TARGET=<target> ./flash.sh <device>`, or point at an image
+# directly with IMG=.
+if [ -z "${IMG:-}" ]; then
+    if [ -f "$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img" ]; then
+        IMG="$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img"
+    else
+        IMG="$STAGING/${TARGET}-${PIOS_RELEASE}.img"
+    fi
+fi
 DEV="${1:-}"
 
 if [ ! -f "$IMG" ]; then
