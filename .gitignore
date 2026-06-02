@@ -1,0 +1,10 @@
+# Cached stock Raspberry Pi OS image (created by setup.sh)
+downloads/
+
+# Built golden image + loop-mount workdir (created by build.sh)
+staging/
+
+# Stray image artifacts
+*.img
+*.img.xz
+*.partial
