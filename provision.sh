@@ -23,12 +23,10 @@ DOWNLOADS="${DOWNLOADS:-$SCRIPT_DIR/downloads}"
 # codename must match the base image. Derive it from PIOS_RELEASE: ark-os-pi-trixie
 # here, from ARK-OS's trixie build (Debian 13 / python3.13).
 ARK_OS_PKG="ark-os-pi-${PIOS_RELEASE}"
-ARK_OS_DEB="${ARK_OS_PKG}_${ARK_OS_VERSION}_arm64.deb"
 # MAVSDK has no debian13 (Trixie) arm64 asset — only debian13_amd64 — so on arm64 we use
 # the debian12 (Bookworm) build. It's C++; libstdc++ is backward compatible, so it runs
 # on Trixie. Bump to debian13_arm64 if MAVSDK ever ships one.
 MAVSDK_DEB="libmavsdk-dev_${MAVSDK_VERSION}_debian12_arm64.deb"
-ARK_OS_URL="https://github.com/ARK-Electronics/ARK-OS/releases/download/v${ARK_OS_VERSION}/${ARK_OS_DEB}"
 MAVSDK_URL="https://github.com/mavlink/MAVSDK/releases/download/v${MAVSDK_VERSION}/${MAVSDK_DEB}"
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
@@ -57,6 +55,30 @@ stage_deb() {
     sudo cp "$DOWNLOADS/$deb" "$ROOTFS_DIR/tmp/$deb"
 }
 
+# Pick the ARK-OS deb when ARK_OS_VERSION is unset (development mode): the newest
+# ark-os-pi-<codename>_*_arm64.deb in downloads/. Errors if none is present; if several
+# have accumulated, warns and lists them (newest wins). Prints the chosen basename.
+resolve_local_ark_os_deb() {
+    local f newest="" matches=()
+    for f in "$DOWNLOADS/${ARK_OS_PKG}"_*_arm64.deb; do
+        [ -e "$f" ] || continue
+        matches+=("$f")
+        if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest="$f"; fi
+    done
+    if [ -z "$newest" ]; then
+        echo "ERROR: ARK_OS_VERSION is unset and no ${ARK_OS_PKG}_*_arm64.deb is in $DOWNLOADS." >&2
+        echo "       Drop an ARK-OS ${PIOS_RELEASE} deb there (an ARK-OS CI build artifact, or the" >&2
+        echo "       output of ARK-OS's ./packaging/build.sh pi on a ${PIOS_RELEASE} host), or pin" >&2
+        echo "       ARK_OS_VERSION in versions.env to a published release." >&2
+        return 1
+    fi
+    if ((${#matches[@]} > 1)); then
+        echo "WARNING: multiple ${ARK_OS_PKG} debs in $DOWNLOADS; using the newest:" >&2
+        for f in "${matches[@]}"; do echo "           $(basename "$f")" >&2; done
+    fi
+    basename "$newest"
+}
+
 # --- Block service (re)starts in the chroot. ark-os self-gates on
 #     /run/systemd/system, but its deps (nginx, avahi, network-manager, …) do not. ---
 printf '#!/bin/sh\nexit 101\n' | sudo tee "$ROOTFS_DIR/usr/sbin/policy-rc.d" >/dev/null
@@ -64,13 +86,28 @@ sudo chmod 0755 "$ROOTFS_DIR/usr/sbin/policy-rc.d"
 trap 'sudo rm -f "$ROOTFS_DIR/usr/sbin/policy-rc.d"' EXIT
 
 stage_deb "$MAVSDK_DEB" "$MAVSDK_URL"
-stage_deb "$ARK_OS_DEB" "$ARK_OS_URL"
+
+# Resolve the ARK-OS deb. Pinned (ARK_OS_VERSION set): fetch that exact release asset,
+# caching it in downloads/. Unset: development mode — install whatever ark-os-pi-<codename>
+# deb is already in downloads/ (newest wins), so iterating on CI-artifact debs (versioned
+# 0.0.0-<sha8>, which are published as workflow artifacts, never as releases, and so can't
+# be fetched by version) doesn't mean editing versions.env for every build.
+if [ -n "${ARK_OS_VERSION:-}" ]; then
+    ARK_OS_DEB="${ARK_OS_PKG}_${ARK_OS_VERSION}_arm64.deb"
+    ARK_OS_URL="https://github.com/ARK-Electronics/ARK-OS/releases/download/v${ARK_OS_VERSION}/${ARK_OS_DEB}"
+    stage_deb "$ARK_OS_DEB" "$ARK_OS_URL"
+else
+    echo "WARNING: ARK_OS_VERSION is unset — using an unpinned ARK-OS deb from downloads/ (development mode)." >&2
+    ARK_OS_DEB="$(resolve_local_ark_os_deb)" || exit 1
+    echo "==> Using $ARK_OS_DEB"
+    sudo cp "$DOWNLOADS/$ARK_OS_DEB" "$ROOTFS_DIR/tmp/$ARK_OS_DEB"
+fi
 
 echo "==> apt-get update"
 in_chroot apt-get update
 echo "==> Installing MAVSDK (ark-os depends on libmavsdk-dev)"
 in_chroot apt-get install -y "/tmp/$MAVSDK_DEB"
-echo "==> Installing ${ARK_OS_PKG}"
+echo "==> Installing ${ARK_OS_PKG} ($ARK_OS_DEB)"
 in_chroot apt-get install -y "/tmp/$ARK_OS_DEB"
 
 echo "==> Verifying packages are fully configured"
