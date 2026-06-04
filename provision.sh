@@ -119,6 +119,14 @@ for pkg in libmavsdk-dev "$ARK_OS_PKG"; do
     }
 done
 
+# The MAVSDK deb is upstream's debian12 (Bookworm) build running on a Trixie rootfs;
+# dpkg confirms it installed, but not that its versioned glibc/libstdc++ symbols are
+# satisfied here (apt declares no such dep, and ldd can't see symbol versions). This
+# static check on the host catches a "GLIBC_2.xx/GLIBCXX_3.4.xx not found" load
+# failure before we ship — the failure mode a MAVSDK_VERSION bump could introduce.
+echo "==> Checking MAVSDK ABI compatibility with the rootfs"
+"$SCRIPT_DIR/check_mavsdk_abi.sh" "$ROOTFS_DIR"
+
 echo "==> Cleaning apt cache and staged debs"
 in_chroot apt-get clean
 sudo rm -f "$ROOTFS_DIR/tmp/$MAVSDK_DEB" "$ROOTFS_DIR/tmp/$ARK_OS_DEB"
