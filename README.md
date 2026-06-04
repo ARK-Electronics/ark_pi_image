@@ -8,6 +8,8 @@ Build a flashable **ARK-OS Raspberry Pi golden image** and write it to an SD car
 ./flash.sh /dev/sdX         # write the finished image to an SD card / eMMC
 ```
 
+`build.sh` runs `setup.sh` itself when the stock image is missing or doesn't match the pinned checksum, so a fresh clone can go straight to `./build.sh`.
+
 The result is a deterministic, turnkey image: every card flashed from it is identical, boots offline, and comes up with *the carrier's hardware already configured* — and, when built with `--provision`, with ARK-OS installed too. It's the production-line analogue of `ark_jetson_kernel --provision`, but far simpler because there is no kernel to build and no NVIDIA recovery-mode flashing.
 
 > **Status.** Not yet validated on hardware. The build runs end to end; the chroot/partition plumbing in `build.sh` is the part most likely to need tuning on a given host, and only the `pi6x-cm4` target's `config.txt` is taken verbatim from hardware docs (see [Targets](#targets)).
@@ -57,10 +59,10 @@ The [Pi6X Flow flashing guide](https://docs.arkelectron.com/products/flight-cont
 
 | Script | What it does |
 |---|---|
-| `setup.sh` | Installs host deps (`qemu-user-static`, `binfmt-support`, `parted`, `xz-utils`, `curl`), registers the `qemu-aarch64` binfmt handler, and downloads the stock Raspberry Pi OS Lite arm64 image into `downloads/` (re-fetching it if the cache doesn't match the pinned sha256). |
-| `build.sh` | Resolves the target, copies the stock image to `staging/`, grows its root partition, loop-mounts it, bind-mounts `/proc /sys /dev`, runs `configure_target.sh` (and, with `--provision`, `provision.sh`) in an `arm64` chroot (emulated via qemu on an x86 host), and reports how long the build took. Produces `staging/<target>-<codename>.img` (or `…-ark-os.img` with `--provision`). |
+| `setup.sh` | Installs host deps (`qemu-user-static`, `binfmt-support`, `parted`, `dosfstools`, `e2fsprogs`, `xz-utils`, `curl`, `ca-certificates`), registers the `qemu-aarch64` binfmt handler, and downloads the stock Raspberry Pi OS Lite arm64 image into `downloads/` (re-fetching it if the cache doesn't match the pinned sha256). |
+| `build.sh` | Resolves the target, verifies the stock image against the pinned sha256 (re-running `setup.sh` to (re)download it if missing or stale), copies it to `staging/`, grows its root partition, loop-mounts it, bind-mounts `/proc /sys /dev`, runs `configure_target.sh` (and, with `--provision`, `provision.sh`) in an `arm64` chroot (emulated via qemu on an x86 host), and reports how long the build took. Produces `staging/<target>-<codename>.img` (or `…-ark-os.img` with `--provision`). |
 | `configure_target.sh` | Always runs. Bakes the `pi` user, sets the hostname, applies the target's `config.txt` edits, and enables SSH. |
-| `provision.sh` | The ARK-OS payload, only with `--provision`: blocks daemon starts with a `policy-rc.d` shim, then `apt-get install`s MAVSDK and the `ark-os-pi-trixie` deb and verifies them. |
+| `provision.sh` | The ARK-OS payload, only with `--provision`: blocks daemon starts with a `policy-rc.d` shim, then `apt-get install`s MAVSDK and the `ark-os-pi-trixie` deb (the pinned `ARK_OS_VERSION` release, or — when that's empty — the newest `ark-os-pi-trixie` deb in `downloads/`) and verifies them. |
 | `flash.sh` | Writes `staging/*.img` to a target block device, with size/model confirmation and guards against writing to a system disk. |
 
 Pins (base image, ARK-OS/MAVSDK versions, baked user, target) live in `versions.env`; per-board hardware config lives in `targets/`.
@@ -68,7 +70,7 @@ Pins (base image, ARK-OS/MAVSDK versions, baked user, target) live in `versions.
 ## Requirements
 
 - A Linux host with `sudo`. x86_64 works (arm64 binaries run under qemu); a native arm64 host (or a Pi) works too and is faster.
-- For `--provision` builds, the `ark-os-pi-trixie_<ver>_arm64.deb` from ARK-OS's Trixie build. Drop a CI-artifact deb into `downloads/` and set `ARK_OS_VERSION` in `versions.env` to its `0.0.0-<sha8>`.
+- For `--provision` builds, the `ark-os-pi-trixie_<ver>_arm64.deb` from ARK-OS's Trixie build. For a published release, set `ARK_OS_VERSION` in `versions.env` and the build downloads it. For an untagged CI build — versioned `0.0.0-<sha8>` and published as a workflow artifact, not a release — drop the deb into `downloads/` and leave `ARK_OS_VERSION` empty; the build installs the newest `ark-os-pi-trixie` deb it finds there.
 
 ## Flashing to CM4/CM5 eMMC
 
@@ -76,8 +78,12 @@ Pins (base image, ARK-OS/MAVSDK versions, baked user, target) live in `versions.
 
 ## Notes / open items
 
-- **Change the baked password** (`versions.env`) before shipping real hardware; the appliance default is `pi` / `raspberry`.
+- **Change the baked password** (`versions.env`) before shipping real hardware. The appliance default `pi` / `raspberry` is baked identically into every card and stored in plaintext; for a production line, prefer Raspberry Pi OS's `userconf.txt` first-boot mechanism (a SHA-512-hashed, optionally per-unit password placed on the boot partition) over a single shared default.
 - **Only `pi6x-cm4` is populated.** The other three targets are stubs (`TARGET_STUB=1`) and refuse to build until their `config.txt` overlays are filled in from hardware docs. The two cross combos (`pi6x-cm5`, `justapi-cm4`) additionally carry hardware caveats — see [Targets](#targets).
 - **ARK-OS is built natively for Trixie.** The `ark-os-pi-trixie` deb comes from ARK-OS's Trixie CI leg (Debian 13 container), so its bundled `python3.13` venv and its `Depends` match the base image. Only MAVSDK is installed cross-release: there is no `debian13_arm64` asset, so the `debian12_arm64` build is used — fine in practice because it's C++ and libstdc++ is backward compatible. (A true Trixie MAVSDK build is the one remaining nicety if upstream ever ships one.)
 - **First-boot finalization.** The deb's postinst defers a few runtime-only steps (default hotspot, flight-review DB, Wi-Fi unblock) into the `ark-os-firstboot` oneshot, which the chroot install enables (a static `WantedBy=multi-user.target` symlink that works offline). A baked card finishes configuring itself on first boot, guarded by a sentinel so it runs once.
 - **Per-device uniqueness is inherited.** Because we only chroot (never boot) the stock image, Pi OS's own first-boot machinery still runs on the device: SSH host keys regenerate, `/etc/machine-id` is generated, and root expands to fill the card.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Flashed images additionally bundle ARK-OS and MAVSDK, which carry their own licenses.
