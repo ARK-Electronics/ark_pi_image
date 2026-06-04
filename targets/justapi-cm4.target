@@ -1,9 +1,12 @@
 # "Just A Pi" carrier + Raspberry Pi Compute Module 4.  [STUB — not yet defined]
 #
-# The Just-A-Pi carrier (a plain CM4/CM5 breakout, no onboard flight controller) hasn't
-# been characterised yet. To enable this target: add whatever config.txt overlays the
-# carrier needs (CSI cameras, fan, UARTs) following targets/pi6x-cm4.target, then delete
-# the TARGET_STUB line below.
+# CAVEAT: the Just-A-Pi carrier was designed around the CM5, so running a CM4 on it has
+# hardware caveats.
+# TODO: document the CM4-on-Just-A-Pi caveats (details TBD).
+#
+# A plain CM4/CM5 breakout, no onboard flight controller; not characterised yet. To
+# enable this target: add whatever config.txt overlays the carrier needs (CSI cameras,
+# fan, UARTs) following targets/pi6x-cm4.target, then delete the TARGET_STUB line below.
 
 TARGET_STUB=1
 TARGET_DESC="Just-A-Pi carrier + CM4  [stub]"

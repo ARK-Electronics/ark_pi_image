@@ -31,7 +31,7 @@ declare -p CONFIG_TXT_DISABLE >/dev/null 2>&1 || CONFIG_TXT_DISABLE=()
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
-# --- Bake the service account. Bookworm ships no default user, but every ark-os
+# --- Bake the service account. Pi OS Lite ships no default user, but every ark-os
 #     unit runs as User=$ARK_PI_USER, so it must exist before the deb installs. ---
 if ! in_chroot getent passwd "$ARK_PI_USER" >/dev/null 2>&1; then
     echo "==> Creating '$ARK_PI_USER' user"
@@ -52,8 +52,8 @@ else
     printf '127.0.1.1\t%s\n' "$TARGET_HOSTNAME" | sudo tee -a "$ROOTFS_DIR/etc/hosts" >/dev/null
 fi
 
-# config.txt lives on the firmware partition (build.sh mounts it at /boot/firmware —
-# the Bookworm/Trixie location; pre-Bookworm used /boot/config.txt).
+# config.txt lives on the firmware partition (build.sh mounts it at /boot/firmware,
+# the location Trixie uses).
 CONFIG_TXT="$ROOTFS_DIR/boot/firmware/config.txt"
 if [ -f "$CONFIG_TXT" ]; then
     if ((${#CONFIG_TXT_DISABLE[@]})); then

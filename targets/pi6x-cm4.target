@@ -1,4 +1,4 @@
-# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4.
+# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4 (native combo).
 #
 # The Pi6X Flow has an onboard ARKV6X flight controller wired directly to the Pi over
 # UART (uart3/uart4 with hardware CTS/RTS flow control) and USB; the carrier also
@@ -6,11 +6,11 @@
 # edits the flashing guide has users make by hand:
 #   docs.arkelectron.com/products/flight-controller/ark-pi6x-flow/flashing-guide/after-flashing-before-installing
 #
-# Sourced by provision.sh. A target may set: TARGET_DESC, TARGET_HOSTNAME (required),
+# Sourced by configure_target.sh. A target may set: TARGET_DESC, TARGET_HOSTNAME (required),
 # CONFIG_TXT_DISABLE (array of stock directives to comment out), CONFIG_TXT_APPEND
 # (block appended verbatim under an ARK-OS marker).
 
-TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4"
+TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4 (native)"
 TARGET_HOSTNAME="pi6x"
 
 CONFIG_TXT_DISABLE=(

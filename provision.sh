@@ -18,13 +18,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/versions.env"
 DOWNLOADS="${DOWNLOADS:-$SCRIPT_DIR/downloads}"
 
-# ARK-OS bakes the build host's OS codename into the package name
-# (ark-os-<platform>-<codename>), and it must match the base image's release — so
-# derive it from PIOS_RELEASE: bumping that to add Trixie also moves the deb name.
+# ARK-OS bakes the build-host OS codename into the package name (ark-os-<platform>-
+# <codename>) and its preinst refuses to install on a different release — so the deb
+# codename must match the base image. Derive it from PIOS_RELEASE: ark-os-pi-trixie
+# here, from ARK-OS's trixie build (Debian 13 / python3.13).
 ARK_OS_PKG="ark-os-pi-${PIOS_RELEASE}"
 ARK_OS_DEB="${ARK_OS_PKG}_${ARK_OS_VERSION}_arm64.deb"
-# Upstream publishes no ubuntu/raspbian asset; debian12_arm64 is a native match for
-# Bookworm.
+# MAVSDK has no debian13 (Trixie) arm64 asset — only debian13_amd64 — so on arm64 we use
+# the debian12 (Bookworm) build. It's C++; libstdc++ is backward compatible, so it runs
+# on Trixie. Bump to debian13_arm64 if MAVSDK ever ships one.
 MAVSDK_DEB="libmavsdk-dev_${MAVSDK_VERSION}_debian12_arm64.deb"
 ARK_OS_URL="https://github.com/ARK-Electronics/ARK-OS/releases/download/v${ARK_OS_VERSION}/${ARK_OS_DEB}"
 MAVSDK_URL="https://github.com/mavlink/MAVSDK/releases/download/v${MAVSDK_VERSION}/${MAVSDK_DEB}"
