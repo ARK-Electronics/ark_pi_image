@@ -63,10 +63,27 @@ if ( source "$TARGET_FILE" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
 fi
 echo "==> Target: $TARGET"
 
-STOCK_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
-[ -f "$STOCK_XZ" ] || { echo "ERROR: stock image not found ($STOCK_XZ). Run ./setup.sh first." >&2; exit 1; }
-
 sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
+
+# Ensure the stock base image is present and matches the pinned sha256 before baking
+# from it. setup.sh owns the download + verification (and re-fetches a cache that no
+# longer matches — e.g. one left from a previous Pi OS release), so delegate to it when
+# the cache is missing or stale instead of silently building a mislabeled image.
+STOCK_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
+stock_image_ok() {
+    [ -f "$STOCK_XZ" ] || return 1
+    [ -n "${PIOS_IMAGE_SHA256:-}" ] || return 0   # no pin to check against; trust the cache
+    echo "$PIOS_IMAGE_SHA256  $STOCK_XZ" | sha256sum -c --status -
+}
+if ! stock_image_ok; then
+    if [ -f "$STOCK_XZ" ]; then
+        echo "==> Stock image doesn't match pinned sha256 (stale release?) — running setup.sh to refresh it"
+    else
+        echo "==> Stock image not present — running setup.sh to fetch it"
+    fi
+    "$SCRIPT_DIR/setup.sh"
+    stock_image_ok || { echo "ERROR: stock image still missing or mismatched after setup.sh ($STOCK_XZ)." >&2; exit 1; }
+fi
 
 # Image name reflects provisioning state: <target>-<codename> for a stock + target-
 # config image, with -ark-os appended when --provision installed the ARK-OS payload.
@@ -119,6 +136,9 @@ LOOP="$(sudo losetup -fP --show "$OUT_IMG")"
 # Pi OS layout: p1 = boot firmware (FAT32, /boot/firmware), p2 = root (ext4).
 sudo parted -s "$LOOP" resizepart 2 100%
 sudo partprobe "$LOOP"
+# Wait for udev to recreate ${LOOP}p2 after the partition-table change before fscking it;
+# otherwise e2fsck/resize2fs can race the device node on a freshly resized partition.
+sudo udevadm settle 2>/dev/null || true
 sudo e2fsck -fy "${LOOP}p2" || true
 sudo resize2fs "${LOOP}p2"
 
