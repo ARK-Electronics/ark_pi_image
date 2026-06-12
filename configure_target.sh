@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
-# Bake target identity + carrier hardware config into a mounted Raspberry Pi OS
-# rootfs: the service account, hostname, config.txt overlays, and SSH. This always
-# runs (with or without --provision) — it's what makes the image target-specific.
-# The ARK-OS payload is installed separately by provision.sh (only with --provision).
-#
-# Invoked by build.sh, which exports:
-#   ROOTFS_DIR — absolute path to the mounted root partition
-#   TARGET     — build target (carrier × compute module)
-# build.sh has already bind-mounted /proc /sys /dev; the qemu-aarch64 binfmt handler
-# lets the chroot run arm64 commands. No packages are installed here, so this needs
-# no policy-rc.d shim (nothing it does starts a service).
+# Bake target identity + carrier config into the mounted rootfs: service account,
+# hostname, config.txt overlays, SSH. Always runs (the ARK-OS payload is separate, in
+# provision.sh). build.sh exports ROOTFS_DIR + TARGET and has bind-mounted /proc /sys /dev;
+# the qemu-aarch64 binfmt handler runs arm64 commands. Installs nothing, so no policy-rc.d.
 set -euo pipefail
 
 : "${ROOTFS_DIR:?build.sh must export ROOTFS_DIR}"
@@ -43,8 +36,7 @@ fi
 # --- Bake target identity + carrier hardware config (hostname, config.txt, SSH) ---
 echo "==> Applying target '$TARGET' (${TARGET_DESC:-$TARGET})"
 
-# Hostname → avahi advertises <hostname>.local; the docs and ark-os service URLs use
-# e.g. http://pi6x.local/.
+# Hostname → avahi advertises <hostname>.local (e.g. just-a-pi.local).
 echo "$TARGET_HOSTNAME" | sudo tee "$ROOTFS_DIR/etc/hostname" >/dev/null
 if sudo grep -qE '^127\.0\.1\.1' "$ROOTFS_DIR/etc/hosts"; then
     sudo sed -i -E "s/^(127\.0\.1\.1[[:space:]]+).*/\1$TARGET_HOSTNAME/" "$ROOTFS_DIR/etc/hosts"
@@ -70,9 +62,7 @@ else
     echo "WARNING: $CONFIG_TXT not found — skipping config.txt edits." >&2
 fi
 
-# Enable SSH so the headless appliance is reachable on first boot. Prefer the
-# deterministic systemctl path; fall back to the boot-partition flag (Pi OS enables
-# ssh on first boot if /boot/firmware/ssh exists) if systemctl can't run in the chroot.
+# Enable SSH; fall back to the boot-partition flag if systemctl can't run in the chroot.
 if [ "${ENABLE_SSH:-0}" = "1" ]; then
     echo "==> Enabling SSH"
     in_chroot systemctl enable ssh || sudo touch "$ROOTFS_DIR/boot/firmware/ssh"

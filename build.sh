@@ -13,9 +13,7 @@ DOWNLOADS="$SCRIPT_DIR/downloads"
 STAGING="$SCRIPT_DIR/staging"
 export DOWNLOADS
 
-# Human-readable elapsed build time, e.g. "14m 32s" or "1h 03m 07s". Reads the bash
-# SECONDS builtin (seconds since this script started) so the final summary can report
-# how long the build took.
+# Format the bash SECONDS builtin as e.g. "14m 32s" for the final summary.
 fmt_duration() {
     local s=$1 h m
     h=$(( s / 3600 )); m=$(( (s % 3600) / 60 )); s=$(( s % 60 ))
@@ -25,10 +23,42 @@ fmt_duration() {
     fi
 }
 
-# Parse args: an optional target (carrier × compute module) plus flags. The target
-# default lives in versions.env; override per build with `./build.sh <target>` or
-# `TARGET=<target> ./build.sh`. --provision additionally installs the ARK-OS payload
-# (MAVSDK + the ark-os-pi deb); without it the image is stock Pi OS + target config.
+# Bake provenance into the rootfs so each card self-documents what produced it. The image
+# otherwise records only the ARK-OS deb version (via dpkg); this adds the builder commit,
+# base-image sha, target, and build time. git_describe carries a '-dirty' suffix when the
+# working tree had uncommitted changes at build time. Installed versions come from the
+# rootfs dpkg DB (so dev-mode 0.0.0-<sha8> debs are recorded accurately).
+write_image_manifest() {
+    local describe commit branch built ark_os mavsdk provisioned
+    built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        describe="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
+        commit="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+        branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    else
+        describe=unknown; commit=unknown; branch=unknown
+    fi
+    if [ "$PROVISION" -eq 1 ]; then
+        provisioned=true
+        ark_os="\"$(sudo chroot "$ROOTFS" dpkg-query -W -f='${Version}' "ark-os-pi-${PIOS_RELEASE}" 2>/dev/null || echo unknown)\""
+        mavsdk="\"$(sudo chroot "$ROOTFS" dpkg-query -W -f='${Version}' libmavsdk-dev 2>/dev/null || echo unknown)\""
+    else
+        provisioned=false; ark_os=null; mavsdk=null
+    fi
+    sudo tee "$ROOTFS/etc/ark-os-image.json" >/dev/null <<EOF
+{
+  "image": "$(basename "$OUT_IMG")",
+  "target": "$TARGET",
+  "built_utc": "$built",
+  "base_image": { "release": "$PIOS_RELEASE", "sha256": "${PIOS_IMAGE_SHA256:-}" },
+  "builder": { "repo": "ark_pi_image", "git_describe": "$describe", "git_commit": "$commit", "git_branch": "$branch" },
+  "ark_os": { "provisioned": $provisioned, "version": $ark_os, "mavsdk": $mavsdk }
+}
+EOF
+}
+
+# Args: an optional target (default from versions.env) plus --provision, which adds the
+# ARK-OS payload; without it the image is stock Pi OS + target config.
 PROVISION=0
 _target_arg=""
 for arg in "$@"; do
@@ -58,17 +88,15 @@ TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
 # Refuse to build a stub target (carrier/module specifics not defined yet).
 if ( source "$TARGET_FILE" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
     echo "ERROR: target '$TARGET' is a stub — its specifics aren't defined yet." >&2
-    echo "       Fill in $TARGET_FILE (copy targets/pi6x-cm4.target) and remove the TARGET_STUB line to build it." >&2
+    echo "       Fill in $TARGET_FILE (see targets/justapi-cm5.target) and remove the TARGET_STUB line to build it." >&2
     exit 1
 fi
 echo "==> Target: $TARGET"
 
 sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
 
-# Ensure the stock base image is present and matches the pinned sha256 before baking
-# from it. setup.sh owns the download + verification (and re-fetches a cache that no
-# longer matches — e.g. one left from a previous Pi OS release), so delegate to it when
-# the cache is missing or stale instead of silently building a mislabeled image.
+# Delegate download + verification to setup.sh when the cached base image is missing or
+# doesn't match the pinned sha256 (e.g. a cache left from a previous release).
 STOCK_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
 stock_image_ok() {
     [ -f "$STOCK_XZ" ] || return 1
@@ -85,8 +113,7 @@ if ! stock_image_ok; then
     stock_image_ok || { echo "ERROR: stock image still missing or mismatched after setup.sh ($STOCK_XZ)." >&2; exit 1; }
 fi
 
-# Image name reflects provisioning state: <target>-<codename> for a stock + target-
-# config image, with -ark-os appended when --provision installed the ARK-OS payload.
+# -ark-os suffix marks a provisioned image.
 if [ "$PROVISION" -eq 1 ]; then
     OUT_IMG="$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img"
 else
@@ -95,9 +122,8 @@ fi
 ROOTFS="$STAGING/rootfs"
 mkdir -p "$STAGING" "$ROOTFS"
 
-# Safety net: a leaked bind mount under $ROOTFS from an interrupted run would make
-# the operations below touch the host's /dev or /proc — refuse and let the operator
-# unmount.
+# A leaked bind mount under $ROOTFS from an interrupted run would make the steps below
+# touch the host's /dev or /proc — refuse and let the operator unmount.
 if mount | awk -v r="$ROOTFS" -v d="$ROOTFS/" '$3==r || index($3,d)==1 {f=1} END{exit !f}'; then
     echo "ERROR: active mount(s) at/under $ROOTFS — unmount before rebuilding:" >&2
     mount | awk -v r="$ROOTFS" -v d="$ROOTFS/" '$3==r || index($3,d)==1 {print "  sudo umount "$3}' >&2
@@ -106,10 +132,8 @@ fi
 
 LOOP=""
 cleanup() {
-    # Belt-and-suspenders: drop the provision-time policy-rc.d shim in case
-    # provision.sh was hard-killed before its own EXIT trap removed it — otherwise
-    # the 'exit 101' shim would ship in the image and block every service start on
-    # the device. Runs while $ROOTFS is still mounted; harmless if already gone.
+    # Drop provision.sh's policy-rc.d shim in case it was hard-killed before its own
+    # trap fired — otherwise the 'exit 101' shim ships and blocks every service start.
     sudo rm -f "$ROOTFS/usr/sbin/policy-rc.d" 2>/dev/null || true
     # Restore the rootfs's own resolv.conf if we swapped in the host's.
     if [ -e "$ROOTFS/etc/resolv.conf.prov-bak" ]; then
@@ -165,6 +189,9 @@ if [ "$PROVISION" -eq 1 ]; then
 else
     echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"
 fi
+
+echo "==> Writing image manifest (/etc/ark-os-image.json)"
+write_image_manifest
 
 echo "==> Unmounting"
 cleanup

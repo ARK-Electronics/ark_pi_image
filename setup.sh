@@ -18,19 +18,16 @@ sudo apt-get install -y \
     parted dosfstools e2fsprogs \
     xz-utils curl ca-certificates
 
-# Register the aarch64 binfmt handler so the arm64 rootfs's binaries (apt, dpkg,
-# the deb maintainer scripts) run inside the chroot on an x86 host. update-binfmts
-# uses the fix-binary (F) flag, so qemu is available in chroots without copying it
-# in. Not needed on a native arm64 host.
+# Register the aarch64 binfmt handler so the chroot's arm64 binaries run on an x86 host.
+# update-binfmts uses the fix-binary (F) flag, so qemu works in chroots without copying
+# it in. Not needed on a native arm64 host.
 if [ "$(uname -m)" != "aarch64" ] && [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
     echo "==> Registering qemu-aarch64 binfmt handler"
     sudo update-binfmts --enable qemu-aarch64
 fi
 
-# Download the stock image into the cache. The cache filename is release-agnostic, so a
-# file left over from a previous Pi OS release (e.g. after bumping versions.env to a new
-# codename) would be stale — when a sha256 is pinned, drop a cached file that doesn't
-# match it and re-download.
+# Download the stock image. The cache filename is release-agnostic, so re-download when a
+# pinned sha256 doesn't match the cached file (e.g. a leftover from a previous release).
 IMG_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
 if [ -f "$IMG_XZ" ] && [ -n "${PIOS_IMAGE_SHA256:-}" ] \
    && ! echo "$PIOS_IMAGE_SHA256  $IMG_XZ" | sha256sum -c --status -; then

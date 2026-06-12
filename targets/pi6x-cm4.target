@@ -1,16 +1,14 @@
-# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4 (native combo).
+# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4.  [STUB — untested on hardware]
 #
-# The Pi6X Flow has an onboard ARKV6X flight controller wired directly to the Pi over
-# UART (uart3/uart4 with hardware CTS/RTS flow control) and USB; the carrier also
-# exposes two CSI camera ports and a cooling-fan header. These are the same config.txt
-# edits the flashing guide has users make by hand:
+# The config below is transcribed from the Pi6X Flow flashing guide but has never been
+# validated on a board, so it's gated off. Remove the TARGET_STUB line to build it.
 #   docs.arkelectron.com/products/flight-controller/ark-pi6x-flow/flashing-guide/after-flashing-before-installing
 #
-# Sourced by configure_target.sh. A target may set: TARGET_DESC, TARGET_HOSTNAME (required),
-# CONFIG_TXT_DISABLE (array of stock directives to comment out), CONFIG_TXT_APPEND
-# (block appended verbatim under an ARK-OS marker).
+# The Pi6X Flow has an onboard ARKV6X flight controller wired to the Pi over UART
+# (uart3/uart4, hardware CTS/RTS) and USB, plus two CSI ports and a cooling-fan header.
 
-TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4 (native)"
+TARGET_STUB=1
+TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4  [untested]"
 TARGET_HOSTNAME="pi6x"
 
 CONFIG_TXT_DISABLE=(
