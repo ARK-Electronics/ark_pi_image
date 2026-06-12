@@ -18,21 +18,26 @@ sudo apt-get install -y \
     parted dosfstools e2fsprogs \
     xz-utils curl ca-certificates
 
-# Register the aarch64 binfmt handler so the arm64 rootfs's binaries (apt, dpkg,
-# the deb maintainer scripts) run inside the chroot on an x86 host. update-binfmts
-# uses the fix-binary (F) flag, so qemu is available in chroots without copying it
-# in. Not needed on a native arm64 host.
+# Register the aarch64 binfmt handler so the chroot's arm64 binaries run on an x86 host.
+# update-binfmts uses the fix-binary (F) flag, so qemu works in chroots without copying
+# it in. Not needed on a native arm64 host.
 if [ "$(uname -m)" != "aarch64" ] && [ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
     echo "==> Registering qemu-aarch64 binfmt handler"
     sudo update-binfmts --enable qemu-aarch64
 fi
 
-# Download the stock image into the cache (idempotent).
+# Download the stock image. The cache filename is release-agnostic, so re-download when a
+# pinned sha256 doesn't match the cached file (e.g. a leftover from a previous release).
 IMG_XZ="$DOWNLOADS/raspios-lite-arm64.img.xz"
+if [ -f "$IMG_XZ" ] && [ -n "${PIOS_IMAGE_SHA256:-}" ] \
+   && ! echo "$PIOS_IMAGE_SHA256  $IMG_XZ" | sha256sum -c --status -; then
+    echo "==> Cached image doesn't match the pinned sha256 (stale release?) — re-downloading"
+    rm -f "$IMG_XZ"
+fi
 if [ -f "$IMG_XZ" ]; then
     echo "==> Stock image already cached: $IMG_XZ"
 else
-    echo "==> Downloading Raspberry Pi OS Lite (arm64)"
+    echo "==> Downloading Raspberry Pi OS Lite (arm64, $PIOS_RELEASE)"
     curl -fL --retry 3 -o "$IMG_XZ.partial" "$PIOS_IMAGE_URL"
     mv "$IMG_XZ.partial" "$IMG_XZ"
 fi

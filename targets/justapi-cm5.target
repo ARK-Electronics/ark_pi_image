@@ -1,13 +1,55 @@
-# "Just A Pi" carrier + Raspberry Pi Compute Module 5.  [STUB — not yet defined]
+# ARK "Just A Pi" carrier + Raspberry Pi Compute Module 5 (native combo).
 #
-# Plain CM4/CM5 breakout, no onboard flight controller; not characterised yet, and
-# CM5's RP1 changes UART/fan handling vs CM4. To enable: populate the config.txt
-# overlays per the hardware docs (see targets/pi6x-cm4.target) and delete the
-# TARGET_STUB line below.
+# config.txt overlays from the ARK flashing guide (values verbatim; comments moved to
+# their own lines — config.txt doesn't support inline comments after a directive):
+#   docs.arkelectron.com/products/embedded-computers/ark-just-a-pi/flashing-guide/after-flashing-before-installing
+#
+# Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
+# CONFIG_TXT_DISABLE (stock directives to comment out), CONFIG_TXT_APPEND (block
+# appended verbatim under an ARK-OS marker).
 
-TARGET_STUB=1
-TARGET_DESC="Just-A-Pi carrier + CM5  [stub]"
-TARGET_HOSTNAME="pi"
+TARGET_DESC="ARK Just-A-Pi carrier + CM5 (native)"
+TARGET_HOSTNAME="just-a-pi"
 
-CONFIG_TXT_DISABLE=()
-CONFIG_TXT_APPEND=""
+CONFIG_TXT_DISABLE=(
+    "camera_auto_detect=1"
+    "display_auto_detect=1"
+)
+
+CONFIG_TXT_APPEND=$(cat <<'EOF'
+# Power/enable rails: KSZ8794 1.2V, release switch from reset, CSI 3.3V
+gpio=27=op,dh
+gpio=20=op,dh
+gpio=22=op,dh
+
+# Cameras: CAM0=J2 (MIPI0), CAM1=J1 (MIPI1). Swap imx219 for your sensor.
+dtoverlay=imx219,cam0
+dtoverlay=imx219,cam1
+
+# UARTs: 0=debug console (J6, GPIO14/15), 2/3 with CTS/RTS flow control
+enable_uart=1
+dtoverlay=uart2,ctsrts
+dtoverlay=uart3,ctsrts
+# uart4 (GPIO12/13) won't come up from config.txt on CM5 — needs rc.local at boot
+dtoverlay=uart4
+
+# PCIe FFC connector (off by default on CM5), at the certified Gen 2 default.
+# Uncomment for Gen 3 (8 GT/s) only if the cable + endpoint are clean at Gen 3.
+dtparam=pciex1
+#dtparam=pciex1_gen=3
+
+# USB2 host-port VBUS — powers downstream devices
+gpio=24=op,dh
+
+# Cooling fan: thresholds in milli-°C, speed 0-255
+dtparam=cooling_fan=on
+dtparam=fan_temp0=40000
+dtparam=fan_temp0_speed=120
+dtparam=fan_temp1=50000
+dtparam=fan_temp2=60000
+dtparam=fan_temp3=70000
+
+# Power LED on by default
+dtparam=pwr_led_trigger=default-on
+EOF
+)
