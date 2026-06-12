@@ -144,6 +144,7 @@ cleanup() {
         sudo rm -f "$ROOTFS/etc/resolv.conf"
         sudo mv "$ROOTFS/etc/resolv.conf.prov-bak" "$ROOTFS/etc/resolv.conf"
     fi
+    sudo umount "$ROOTFS/var/cache/apt/archives" 2>/dev/null || true
     sudo umount "$ROOTFS/boot/firmware" 2>/dev/null || true
     sudo umount "$ROOTFS/dev/pts" 2>/dev/null || true
     sudo umount "$ROOTFS/dev" 2>/dev/null || true
@@ -189,6 +190,13 @@ echo "==> Configuring target (arm64 chroot)"
 "$SCRIPT_DIR/configure_target.sh"
 if [ "$PROVISION" -eq 1 ]; then
     echo "==> Installing ARK-OS payload (arm64 chroot)"
+    # Persist apt's downloaded dependency .debs across builds: bind-mount a host cache
+    # over the chroot's archive dir so an unchanged rebuild reuses them instead of
+    # re-fetching the whole dependency tree. cleanup() unmounts it; the image keeps none.
+    APT_CACHE="$DOWNLOADS/apt-cache"
+    mkdir -p "$APT_CACHE"
+    sudo mkdir -p "$ROOTFS/var/cache/apt/archives"
+    sudo mount --bind "$APT_CACHE" "$ROOTFS/var/cache/apt/archives"
     "$SCRIPT_DIR/provision.sh"
 else
     echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"

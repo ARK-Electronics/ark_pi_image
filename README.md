@@ -13,7 +13,7 @@ Linux host with `sudo`. x86_64 works (the arm64 chroot runs under qemu — slowe
 ./flash.sh /dev/sdX           # write it to the SD card
 ```
 
-- `build.sh` installs host tools and downloads the base image on first run (≈550 MB), then builds in an arm64 chroot. Expect 20–40 min under qemu. Output: `staging/justapi-cm5-trixie-ark-os.img`.
+- `build.sh` installs host tools and downloads the base image on first run (≈550 MB), then builds in an arm64 chroot. Expect 20–40 min on the first run, faster after: the base image, the debs, and the apt dependency cache (`downloads/apt-cache/`) are reused, so unchanged rebuilds skip the downloads. Output: `staging/justapi-cm5-trixie-ark-os.img`.
 - `flash.sh` with no device lists removable candidates; re-run with the device. It refuses the host's system disk and re-prompts for the device path before writing.
 
 Each step tees its full output to `staging/{setup,build,flash}.log.txt` for post-mortem.

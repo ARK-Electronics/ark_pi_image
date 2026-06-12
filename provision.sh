@@ -88,12 +88,15 @@ else
     sudo cp "$DOWNLOADS/$ARK_OS_DEB" "$ROOTFS_DIR/tmp/$ARK_OS_DEB"
 fi
 
+# Keep downloaded dependency .debs in /var/cache/apt/archives (build.sh's persistent
+# cache) instead of letting apt discard them, so the next build reuses them.
+APT_INSTALL=(apt-get install -y -o APT::Keep-Downloaded-Packages=true)
 echo "==> apt-get update"
 in_chroot apt-get update
 echo "==> Installing MAVSDK (ark-os depends on libmavsdk-dev)"
-in_chroot apt-get install -y "/tmp/$MAVSDK_DEB"
+in_chroot "${APT_INSTALL[@]}" "/tmp/$MAVSDK_DEB"
 echo "==> Installing ${ARK_OS_PKG} ($ARK_OS_DEB)"
-in_chroot apt-get install -y "/tmp/$ARK_OS_DEB"
+in_chroot "${APT_INSTALL[@]}" "/tmp/$ARK_OS_DEB"
 
 echo "==> Verifying packages are fully configured"
 for pkg in libmavsdk-dev "$ARK_OS_PKG"; do
@@ -110,8 +113,11 @@ done
 echo "==> Checking MAVSDK ABI compatibility with the rootfs"
 "$SCRIPT_DIR/check_mavsdk_abi.sh" "$ROOTFS_DIR"
 
-echo "==> Cleaning apt cache and staged debs"
-in_chroot apt-get clean
+# Don't `apt-get clean`: /var/cache/apt/archives is build.sh's persistent deb cache
+# (bind-mounted from the host, unmounted before the image is finalized), so the
+# downloaded debs are reused next build and never ship in the image. Just drop the
+# staged payload debs from /tmp.
+echo "==> Removing staged debs"
 sudo rm -f "$ROOTFS_DIR/tmp/$MAVSDK_DEB" "$ROOTFS_DIR/tmp/$ARK_OS_DEB"
 
 echo "==> ARK-OS payload installed"
