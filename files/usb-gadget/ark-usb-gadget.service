@@ -1,0 +1,15 @@
+[Unit]
+Description=USB Ethernet gadget (CDC NCM via configfs)
+# configfs must be mounted before the gadget tree can be built. usb0 appears when this
+# unit binds the UDC; NetworkManager then activates the baked ark-usb-gadget profile.
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ark-usb-gadget start
+ExecStop=/usr/local/sbin/ark-usb-gadget stop
+
+[Install]
+WantedBy=multi-user.target
