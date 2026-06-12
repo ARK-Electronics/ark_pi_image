@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Chroot-install the ARK-OS payload (MAVSDK + the ark-os-pi-<codename> deb) into the
-# mounted rootfs. Runs only with --provision. build.sh exports ROOTFS_DIR + DOWNLOADS
+# Chroot-install the ARK-OS payload (the ark-os-pi-<codename> deb) into the mounted
+# rootfs. Runs only with --provision. build.sh exports ROOTFS_DIR + DOWNLOADS
 # and has already bind-mounted /proc /sys /dev and provided DNS; the qemu-aarch64 binfmt
 # handler runs the arm64 maintainer scripts. /run is NOT mounted, so the ark-os postinst's
 # runtime-only steps self-skip here and run on the device's first boot.
@@ -15,10 +15,6 @@ DOWNLOADS="${DOWNLOADS:-$SCRIPT_DIR/downloads}"
 # The codename is part of the package name and its preinst refuses a release mismatch,
 # so this must track the base image (→ ark-os-pi-trixie).
 ARK_OS_PKG="ark-os-pi-${PIOS_RELEASE}"
-# No Trixie arm64 MAVSDK asset exists; the debian12 (Bookworm) build is C++ and libstdc++
-# is backward compatible, so it runs on Trixie. Bump to debian13_arm64 if one ever ships.
-MAVSDK_DEB="libmavsdk-dev_${MAVSDK_VERSION}_debian12_arm64.deb"
-MAVSDK_URL="https://github.com/mavlink/MAVSDK/releases/download/v${MAVSDK_VERSION}/${MAVSDK_DEB}"
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
@@ -73,8 +69,6 @@ printf '#!/bin/sh\nexit 101\n' | sudo tee "$ROOTFS_DIR/usr/sbin/policy-rc.d" >/d
 sudo chmod 0755 "$ROOTFS_DIR/usr/sbin/policy-rc.d"
 trap 'sudo rm -f "$ROOTFS_DIR/usr/sbin/policy-rc.d"' EXIT
 
-stage_deb "$MAVSDK_DEB" "$MAVSDK_URL"
-
 # Resolve the ARK-OS deb: pinned ARK_OS_VERSION fetches that release asset; unset is dev
 # mode (newest matching deb in downloads/ — for CI artifacts that can't be fetched by version).
 if [ -n "${ARK_OS_VERSION:-}" ]; then
@@ -93,31 +87,29 @@ fi
 APT_INSTALL=(apt-get install -y -o APT::Keep-Downloaded-Packages=true)
 echo "==> apt-get update"
 in_chroot apt-get update
-echo "==> Installing MAVSDK (ark-os depends on libmavsdk-dev)"
-in_chroot "${APT_INSTALL[@]}" "/tmp/$MAVSDK_DEB"
+# MAVSDK is not installed separately: ark-os bundles its own under
+# /usr/lib/ark-os/mavsdk (ARK-OS#75). A pre-bundling ark-os deb fails here with an
+# unresolvable libmavsdk-dev Depends — fix by bumping ARK_OS_VERSION.
 echo "==> Installing ${ARK_OS_PKG} ($ARK_OS_DEB)"
 in_chroot "${APT_INSTALL[@]}" "/tmp/$ARK_OS_DEB"
 
-echo "==> Verifying packages are fully configured"
-for pkg in libmavsdk-dev "$ARK_OS_PKG"; do
-    status=$(in_chroot dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)
-    [ "$status" = "install ok installed" ] || {
-        echo "ERROR: $pkg is not installed (dpkg status: '${status:-missing}')." >&2
-        exit 1
-    }
-done
-
-# dpkg confirms the cross-release MAVSDK deb installed, but not that its versioned
-# glibc/libstdc++ symbols are satisfied (no apt dep declares them). Catch a "version not
-# found" load failure — the risk a MAVSDK_VERSION bump could introduce — before shipping.
-echo "==> Checking MAVSDK ABI compatibility with the rootfs"
-"$SCRIPT_DIR/check_mavsdk_abi.sh" "$ROOTFS_DIR"
+echo "==> Verifying ${ARK_OS_PKG} is fully configured"
+status=$(in_chroot dpkg-query -W -f='${Status}' "$ARK_OS_PKG" 2>/dev/null || true)
+[ "$status" = "install ok installed" ] || {
+    echo "ERROR: $ARK_OS_PKG is not installed (dpkg status: '${status:-missing}')." >&2
+    exit 1
+}
+# The services load the MAVSDK bundled inside the deb; assert it shipped.
+in_chroot sh -c 'ls /usr/lib/ark-os/mavsdk/lib/libmavsdk.so.* >/dev/null 2>&1' || {
+    echo "ERROR: installed ark-os ships no bundled MAVSDK under /usr/lib/ark-os/mavsdk." >&2
+    exit 1
+}
 
 # Don't `apt-get clean`: /var/cache/apt/archives is build.sh's persistent deb cache
 # (bind-mounted from the host, unmounted before the image is finalized), so the
 # downloaded debs are reused next build and never ship in the image. Just drop the
-# staged payload debs from /tmp.
-echo "==> Removing staged debs"
-sudo rm -f "$ROOTFS_DIR/tmp/$MAVSDK_DEB" "$ROOTFS_DIR/tmp/$ARK_OS_DEB"
+# staged payload deb from /tmp.
+echo "==> Removing staged deb"
+sudo rm -f "$ROOTFS_DIR/tmp/$ARK_OS_DEB"
 
 echo "==> ARK-OS payload installed"
