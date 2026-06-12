@@ -91,6 +91,10 @@ if ( source "$TARGET_FILE" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
     echo "       Fill in $TARGET_FILE (see targets/justapi-cm5.target) and remove the TARGET_STUB line to build it." >&2
     exit 1
 fi
+# Tee all output (incl. configure_target.sh + provision.sh) to staging/build.log.txt.
+mkdir -p "$STAGING"
+exec > >(tee "$STAGING/build.log.txt") 2>&1
+
 echo "==> Target: $TARGET"
 
 sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }

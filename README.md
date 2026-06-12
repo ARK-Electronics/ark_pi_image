@@ -16,6 +16,8 @@ Linux host with `sudo`. x86_64 works (the arm64 chroot runs under qemu — slowe
 - `build.sh` installs host tools and downloads the base image on first run (≈550 MB), then builds in an arm64 chroot. Expect 20–40 min under qemu. Output: `staging/justapi-cm5-trixie-ark-os.img`.
 - `flash.sh` with no device lists removable candidates; re-run with the device. It refuses the host's system disk and re-prompts for the device path before writing.
 
+Each step tees its full output to `staging/{setup,build,flash}.log.txt` for post-mortem.
+
 Insert the card into the Just A Pi with the CM5 installed and power on. It comes up headless:
 
 ```bash

@@ -57,6 +57,11 @@ echo "  image : $IMG"
 read -rp "Re-type the device path to confirm: " confirm
 [ "$confirm" = "$DEV" ] || { echo "Mismatch; aborting."; exit 1; }
 
+# Tee the write to staging/flash.log.txt — after the confirm so tee buffering doesn't
+# swallow the prompt.
+exec > >(tee "$STAGING/flash.log.txt") 2>&1
+echo "==> Flashing $IMG -> $DEV ($SIZE  ${MODEL:-unknown})"
+
 # Unmount any partitions of the target before writing.
 for part in $(lsblk -lnpo NAME "$DEV" | tail -n +2); do
     sudo umount "$part" 2>/dev/null || true
