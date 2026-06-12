@@ -26,8 +26,10 @@ fmt_duration() {
 # Bake provenance into the rootfs so each card self-documents what produced it. The image
 # otherwise records only the ARK-OS deb version (via dpkg); this adds the builder commit,
 # base-image sha, target, and build time. git_describe carries a '-dirty' suffix when the
-# working tree had uncommitted changes at build time. Installed versions come from the
-# rootfs dpkg DB (so dev-mode 0.0.0-<sha8> debs are recorded accurately).
+# working tree had uncommitted changes at build time. The ARK-OS version comes from the
+# rootfs dpkg DB (so dev-mode 0.0.0-<sha8> debs are recorded accurately); MAVSDK has no
+# dpkg entry since ark-os bundles it (ARK-OS#75), so its version is read off the bundled
+# lib's filename.
 write_image_manifest() {
     local describe commit branch built ark_os mavsdk provisioned
     built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -41,7 +43,12 @@ write_image_manifest() {
     if [ "$PROVISION" -eq 1 ]; then
         provisioned=true
         ark_os="\"$(sudo chroot "$ROOTFS" dpkg-query -W -f='${Version}' "ark-os-pi-${PIOS_RELEASE}" 2>/dev/null || echo unknown)\""
-        mavsdk="\"$(sudo chroot "$ROOTFS" dpkg-query -W -f='${Version}' libmavsdk-dev 2>/dev/null || echo unknown)\""
+        # The versioned real file (-type f skips the soname/dev symlinks), e.g.
+        # libmavsdk.so.3.17.1 -> 3.17.1.
+        mavsdk="$(sudo find "$ROOTFS/usr/lib/ark-os/mavsdk/lib" -maxdepth 1 \
+                      -name 'libmavsdk.so.*' -type f -printf '%f\n' 2>/dev/null \
+                  | head -1 | sed 's/^libmavsdk\.so\.//')"
+        mavsdk="\"${mavsdk:-unknown}\""
     else
         provisioned=false; ark_os=null; mavsdk=null
     fi

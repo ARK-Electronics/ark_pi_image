@@ -63,11 +63,11 @@ Pinned in `versions.env`:
 
 - **Base:** Raspberry Pi OS Lite arm64, **Trixie (Debian 13)** — URL + sha256. One release at a time; for Bookworm, check out an older tag.
 - **ARK-OS:** `ark-os-pi-trixie` (`ARK_OS_VERSION`), built against Debian 13 / python3.13 to match the base. Installed only with `--provision`. The deb's `preinst` enforces the codename match, and its services run as user `pi`.
-- **MAVSDK:** ARK-OS's one hard dependency with no apt repo. No Trixie arm64 asset exists, so the `debian12_arm64` (Bookworm) build is used — it's C++ and libstdc++ is backward compatible, so it loads fine on Trixie. `provision.sh` runs `check_mavsdk_abi.sh` to fail the build if that ever stops holding.
+- **MAVSDK:** bundled inside the ark-os deb under `/usr/lib/ark-os/mavsdk` (since [ARK-Electronics/ARK-OS#75](https://github.com/ARK-Electronics/ARK-OS/pull/75)) — nothing to install or pin here, and the image carries no system-wide MAVSDK, so installing your own never touches ARK-OS. `provision.sh` asserts the installed deb actually ships the bundled library.
 
 To move to a newer Pi OS release, bump the base URL/sha256 + `PIOS_RELEASE` together and rebuild the ARK-OS deb for that release.
 
-Every image carries `/etc/ark-os-image.json` recording what built it: the `ark_pi_image` commit (`git describe`, with a `-dirty` suffix if built from uncommitted changes), base-image sha256, target, build time, and installed ARK-OS/MAVSDK versions.
+Every image carries `/etc/ark-os-image.json` recording what built it: the `ark_pi_image` commit (`git describe`, with a `-dirty` suffix if built from uncommitted changes), base-image sha256, target, build time, and the installed ARK-OS version plus the MAVSDK it bundles.
 
 ## Without `--provision`
 
