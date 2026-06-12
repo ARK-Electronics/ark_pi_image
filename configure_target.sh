@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Bake target identity + carrier config into the mounted rootfs: service account,
-# hostname, config.txt overlays, SSH. Always runs (the ARK-OS payload is separate, in
-# provision.sh). build.sh exports ROOTFS_DIR + TARGET and has bind-mounted /proc /sys /dev;
-# the qemu-aarch64 binfmt handler runs arm64 commands. Installs nothing, so no policy-rc.d.
+# hostname, config.txt overlays, SSH, USB gadget. Always runs (the ARK-OS payload is
+# separate, in provision.sh). build.sh exports ROOTFS_DIR + TARGET and has bind-mounted
+# /proc /sys /dev; the qemu-aarch64 binfmt handler runs arm64 commands. Installs no
+# packages, so no policy-rc.d.
 set -euo pipefail
 
 : "${ROOTFS_DIR:?build.sh must export ROOTFS_DIR}"
@@ -74,6 +75,26 @@ fi
 if [ "${ENABLE_SSH:-0}" = "1" ]; then
     echo "==> Enabling SSH"
     in_chroot systemctl enable ssh || sudo touch "$ROOTFS_DIR/boot/firmware/ssh"
+fi
+
+# USB Ethernet gadget (Ethernet-over-USB on the dwc2 device port). Targets opt in with
+# TARGET_USB_GADGET=1 and must also switch dwc2 to peripheral mode in their config.txt
+# keys. Ships a configfs gadget script + oneshot unit + NM shared-mode profile; the kernel
+# modules (dwc2, libcomposite, usb_f_ncm) and NM's dnsmasq-base are already in Pi OS.
+if [ "${TARGET_USB_GADGET:-0}" = "1" ]; then
+    echo "==> Installing USB Ethernet gadget"
+    sudo install -D -m 0755 "$SCRIPT_DIR/files/usb-gadget/ark-usb-gadget" \
+        "$ROOTFS_DIR/usr/local/sbin/ark-usb-gadget"
+    # Operator toggle (gadget <-> host, reboot to apply) — /usr/local/bin so it's on
+    # PATH in both image flavors, not just when the ark-os profile.d snippet exists.
+    sudo install -D -m 0755 "$SCRIPT_DIR/files/usb-gadget/ark-usb-mode" \
+        "$ROOTFS_DIR/usr/local/bin/ark-usb-mode"
+    sudo install -D -m 0644 "$SCRIPT_DIR/files/usb-gadget/ark-usb-gadget.service" \
+        "$ROOTFS_DIR/etc/systemd/system/ark-usb-gadget.service"
+    # NM refuses keyfiles unless they are 0600 root:root.
+    sudo install -D -m 0600 -o root -g root "$SCRIPT_DIR/files/usb-gadget/ark-usb-gadget.nmconnection" \
+        "$ROOTFS_DIR/etc/NetworkManager/system-connections/ark-usb-gadget.nmconnection"
+    in_chroot systemctl enable ark-usb-gadget.service
 fi
 
 echo "==> Target configuration complete"

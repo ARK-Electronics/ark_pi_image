@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Flip the USB-C dwc2 port between gadget (Ethernet-over-USB device) and host mode by
+# rewriting the active dtoverlay=dwc2 line in config.txt. dr_mode is fixed at boot, so
+# a switch takes effect on the next reboot; `status` (no root needed) shows configured
+# vs live mode. Installed to /usr/local/bin by configure_target.sh alongside the
+# ark-usb-gadget service it enables/disables.
+set -euo pipefail
+
+CONFIG_TXT=/boot/firmware/config.txt
+SERVICE=ark-usb-gadget.service
+
+usage() { echo "Usage: ark-usb-mode {gadget|host|status}" >&2; exit 1; }
+
+# The firmware applies dtoverlay lines in order, so the last active dwc2 line wins.
+configured_mode() {
+    local line
+    line="$(grep -E '^[[:space:]]*dtoverlay=dwc2' "$CONFIG_TXT" 2>/dev/null | tail -n1)"
+    case "$line" in
+        *dr_mode=peripheral*) echo gadget ;;
+        *dr_mode=host*)       echo host ;;
+        "")                   echo none ;;
+        *)                    echo otg ;;
+    esac
+}
+
+# A UDC node only exists when dwc2 came up as a device controller this boot.
+live_mode() {
+    local u
+    for u in /sys/class/udc/*; do
+        [ -e "$u" ] && { echo gadget; return; }
+    done
+    echo host
+}
+
+set_mode() {
+    local mode="$1" dr_mode
+    [ "$(id -u)" -eq 0 ] || { echo "ERROR: run as root (sudo ark-usb-mode $mode)." >&2; exit 1; }
+    [ -f "$CONFIG_TXT" ] || { echo "ERROR: $CONFIG_TXT not found." >&2; exit 1; }
+    [ "$mode" = gadget ] && dr_mode=peripheral || dr_mode=host
+
+    # Rewrite any active dtoverlay=dwc2 line; if none is left (hand-edited config),
+    # append one — end of file lands after the stock [cm5] section, where it must be
+    # to override the dr_mode=host default.
+    if grep -qE '^[[:space:]]*dtoverlay=dwc2' "$CONFIG_TXT"; then
+        sed -i -E "s/^[[:space:]]*dtoverlay=dwc2.*$/dtoverlay=dwc2,dr_mode=${dr_mode}/" "$CONFIG_TXT"
+    else
+        printf 'dtoverlay=dwc2,dr_mode=%s\n' "$dr_mode" >> "$CONFIG_TXT"
+    fi
+
+    # The gadget unit can only succeed when a UDC exists, so it tracks the mode.
+    if [ "$mode" = gadget ]; then
+        systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+    else
+        systemctl disable "$SERVICE" >/dev/null 2>&1 || true
+    fi
+
+    if [ "$(live_mode)" = "$mode" ]; then
+        echo "USB-C is already in $mode mode; configuration refreshed."
+    else
+        echo "USB-C set to $mode mode — reboot to apply."
+    fi
+}
+
+status() {
+    local conf live enabled active
+    conf="$(configured_mode)"; live="$(live_mode)"
+    enabled="$(systemctl is-enabled "$SERVICE" 2>/dev/null)" || true
+    active="$(systemctl is-active "$SERVICE" 2>/dev/null)" || true
+    echo "configured (config.txt): $conf"
+    echo "live (this boot):        $live"
+    echo "gadget service:          ${enabled:-not-installed} / ${active:-unknown}"
+    [ "$conf" = "$live" ] || echo "reboot required to apply the configured mode"
+}
+
+case "${1:-}" in
+    gadget|host) set_mode "$1" ;;
+    status)      status ;;
+    *)           usage ;;
+esac

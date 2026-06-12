@@ -24,6 +24,22 @@ Insert the card into the Just A Pi with the CM5 installed and power on. It comes
 ssh pi@just-a-pi.local        # password: pi
 ```
 
+No network? The USB-C flashing port doubles as **Ethernet-over-USB** (USB gadget mode): connect it to a computer and the Pi enumerates as a USB network adapter (CDC NCM — driverless on Linux, macOS, and Windows 11), hands the host a DHCP lease, and is reachable at `192.168.55.1` (or `just-a-pi.local`):
+
+```bash
+ssh pi@192.168.55.1           # over the USB-C cable, no network needed
+```
+
+Use a USB **A**-to-C cable: the carrier's USB-C has no CC resistors, so a Type-C host on a C-to-C cable never detects a device and never connects, while an A port supplies VBUS unconditionally — the same setup as rpiboot eMMC flashing. If it doesn't enumerate, try the C plug the other way up (CC-less ports can be orientation-sensitive). Power the board from its Molex input as usual; the USB-C is not a power input.
+
+Gadget mode claims the USB-C's USB 2.0 pins, so they can't host USB2 devices at the same time (the JST-GH USB2 host port is unaffected). To trade Ethernet-over-USB for a USB2 host port on the USB-C, use the baked-in toggle — `dr_mode` is fixed at boot, so switching takes a reboot:
+
+```bash
+sudo ark-usb-mode host        # USB-C becomes a USB2 host port (after reboot)
+sudo ark-usb-mode gadget      # back to Ethernet-over-USB (after reboot)
+ark-usb-mode status           # configured vs live mode
+```
+
 > **CM5 with onboard eMMC** has no SD slot — flash over USB instead. Short the `BOOT` jumper (next to UART4), connect USB-C to the host, run [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc) so the eMMC appears as `/dev/sdX`, `./flash.sh /dev/sdX`, then remove the jumper and boot.
 
 > **Before shipping real units, change the baked `pi`/`pi` password** in `versions.env` (it's stored identically on every card). For a production line, prefer Pi OS's `userconf.txt` first-boot mechanism.
@@ -39,7 +55,7 @@ A *target* (`targets/*.target`) is a carrier × compute-module pair. It sets the
 | `justapi-cm5` *(default)* | Just A Pi + CM5 | supported |
 | `pi6x-cm4` | Pi6X Flow + CM4 | stub — config transcribed from docs, untested; gated off |
 
-`pi6x-cm4` refuses to build until validated: remove its `TARGET_STUB=1` line. Add a target by copying an existing file and setting `TARGET_HOSTNAME`, `CONFIG_TXT_DISABLE`, and `CONFIG_TXT_APPEND`.
+`pi6x-cm4` refuses to build until validated: remove its `TARGET_STUB=1` line. Add a target by copying an existing file and setting `TARGET_HOSTNAME`, `CONFIG_TXT_DISABLE`, and `CONFIG_TXT_APPEND`. Targets whose dwc2 USB port is free to run in device mode can also set `TARGET_USB_GADGET=1` to ship the Ethernet-over-USB gadget (`files/usb-gadget/`): a configfs NCM gadget service, a NetworkManager shared-mode profile (`192.168.55.1/24`, DHCP for the host), and the `ark-usb-mode` gadget/host toggle — the dwc2 `dr_mode=peripheral` switch stays in the target's `config.txt` keys.
 
 ## What's in the image
 

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Build (or tear down) the USB Ethernet gadget via configfs: a CDC NCM function on the
+# CM5's dwc2 controller, so the flashing USB-C port doubles as Ethernet-over-USB.
+# NCM is the one class with native drivers on Linux, macOS, and Windows 11 (Microsoft's
+# recommended replacement for RNDIS, which Win11 no longer auto-binds). Run by
+# ark-usb-gadget.service as root; requires dtoverlay=dwc2,dr_mode=peripheral in
+# config.txt (baked by the target's config).
+#
+# Pi OS ships its own mechanism (rpi-usb-gadget: g_ether ECM+RNDIS, 10.12.194.1, enabled
+# at runtime via nmcli). Not used here because RNDIS needs a manual driver install on
+# Windows, its MACs are random every boot, and it can't be enabled in the build chroot —
+# this gadget is baked, deterministic, and keeps ARK's Jetson-style 192.168.55.1.
+set -euo pipefail
+
+GADGET=/sys/kernel/config/usb_gadget/ark
+
+start() {
+    # dwc2 normally autoloads from its devicetree node, but don't race udev coldplug.
+    modprobe dwc2
+    modprobe libcomposite
+
+    [ -d "$GADGET" ] && return 0
+
+    # Stable per-unit MACs: derive both link ends from the SoC serial so the host sees
+    # the same adapter across reboots and two units never collide on one host. 0x02/0x06
+    # first octets = locally administered unicast.
+    local serial mac_tail
+    serial="$(awk '/^Serial/ {print $3}' /proc/cpuinfo)"
+    [ -n "$serial" ] || serial="$(cat /etc/machine-id)"
+    mac_tail="$(printf '%s' "$serial" | sha256sum | sed -E 's/^(..)(..)(..)(..)(..).*/\1:\2:\3:\4:\5/')"
+
+    mkdir -p "$GADGET"
+    cd "$GADGET"
+    echo 0x1d6b > idVendor   # Linux Foundation
+    echo 0x0104 > idProduct  # Multifunction Composite Gadget
+    echo 0x0200 > bcdUSB
+
+    mkdir -p strings/0x409
+    echo "ARK Electronics"           > strings/0x409/manufacturer
+    echo "$(hostname) USB Ethernet"  > strings/0x409/product
+    echo "$serial"                   > strings/0x409/serialnumber
+
+    mkdir -p configs/c.1/strings/0x409
+    echo "CDC NCM network" > configs/c.1/strings/0x409/configuration
+    echo 250 > configs/c.1/MaxPower
+
+    mkdir -p functions/ncm.usb0
+    echo "02:$mac_tail" > functions/ncm.usb0/dev_addr   # Pi end
+    echo "06:$mac_tail" > functions/ncm.usb0/host_addr  # host end
+    ln -s functions/ncm.usb0 configs/c.1/
+
+    # The UDC node appears once dwc2 binds the devicetree controller; give udev a moment.
+    local udc="" path
+    for _ in $(seq 50); do
+        for path in /sys/class/udc/*; do
+            [ -e "$path" ] && udc="${path##*/}" && break
+        done
+        [ -n "$udc" ] && break
+        sleep 0.2
+    done
+    [ -n "$udc" ] || {
+        echo "ERROR: no UDC found — is dtoverlay=dwc2,dr_mode=peripheral in config.txt?" >&2
+        exit 1
+    }
+    echo "$udc" > UDC
+}
+
+stop() {
+    [ -d "$GADGET" ] || return 0
+    cd "$GADGET"
+    echo "" > UDC 2>/dev/null || true
+    rm -f configs/c.1/ncm.usb0
+    rmdir configs/c.1/strings/0x409 configs/c.1 functions/ncm.usb0 strings/0x409 2>/dev/null || true
+    cd /
+    rmdir "$GADGET" 2>/dev/null || true
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop)  stop ;;
+    *) echo "Usage: $0 {start|stop}" >&2; exit 1 ;;
+esac
