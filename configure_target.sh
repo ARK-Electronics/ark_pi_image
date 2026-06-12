@@ -85,6 +85,10 @@ if [ "${TARGET_USB_GADGET:-0}" = "1" ]; then
     echo "==> Installing USB Ethernet gadget"
     sudo install -D -m 0755 "$SCRIPT_DIR/files/usb-gadget/ark-usb-gadget" \
         "$ROOTFS_DIR/usr/local/sbin/ark-usb-gadget"
+    # Operator toggle (gadget <-> host, reboot to apply) — /usr/local/bin so it's on
+    # PATH in both image flavors, not just when the ark-os profile.d snippet exists.
+    sudo install -D -m 0755 "$SCRIPT_DIR/files/usb-gadget/ark-usb-mode" \
+        "$ROOTFS_DIR/usr/local/bin/ark-usb-mode"
     sudo install -D -m 0644 "$SCRIPT_DIR/files/usb-gadget/ark-usb-gadget.service" \
         "$ROOTFS_DIR/etc/systemd/system/ark-usb-gadget.service"
     # NM refuses keyfiles unless they are 0600 root:root.
