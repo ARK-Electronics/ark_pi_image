@@ -20,7 +20,7 @@ sudo apt-get update
 sudo apt-get install -y \
     qemu-user-static binfmt-support \
     parted dosfstools e2fsprogs \
-    xz-utils curl ca-certificates
+    xz-utils curl ca-certificates openssl
 
 # Register the aarch64 binfmt handler so the chroot's arm64 binaries run on an x86 host.
 # update-binfmts uses the fix-binary (F) flag, so qemu works in chroots without copying

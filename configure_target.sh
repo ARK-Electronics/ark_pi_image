@@ -24,14 +24,22 @@ declare -p CONFIG_TXT_DISABLE >/dev/null 2>&1 || CONFIG_TXT_DISABLE=()
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
-# --- Bake the service account. Pi OS Lite ships no default user, but every ark-os
-#     unit runs as User=$ARK_PI_USER, so it must exist before the deb installs. ---
+# --- Service account. Pi OS Trixie ships a 'pi' user whose password is LOCKED — real
+#     setup is deferred to a first-boot wizard that blocks SSH ("set up a valid user")
+#     until it runs. Create the account if missing, then ALWAYS set its password + sudo
+#     (a pre-existing locked 'pi' would otherwise ship with no usable login — guarding
+#     chpasswd behind the create was the bug), and write userconf.txt so Pi OS's firstboot
+#     treats the account as configured and cancels the wizard. ark-os also needs this
+#     account: every unit runs as User=$ARK_PI_USER. ---
 if ! in_chroot getent passwd "$ARK_PI_USER" >/dev/null 2>&1; then
     echo "==> Creating '$ARK_PI_USER' user"
     in_chroot useradd -m -s /bin/bash "$ARK_PI_USER"
-    echo "${ARK_PI_USER}:${ARK_PI_PASSWORD}" | in_chroot chpasswd
-    in_chroot usermod -aG sudo "$ARK_PI_USER"
 fi
+echo "==> Setting '$ARK_PI_USER' password + sudo"
+echo "${ARK_PI_USER}:${ARK_PI_PASSWORD}" | in_chroot chpasswd
+in_chroot usermod -aG sudo "$ARK_PI_USER"
+printf '%s:%s\n' "$ARK_PI_USER" "$(openssl passwd -6 "$ARK_PI_PASSWORD")" \
+    | sudo tee "$ROOTFS_DIR/boot/firmware/userconf.txt" >/dev/null
 
 # --- Bake target identity + carrier hardware config (hostname, config.txt, SSH) ---
 echo "==> Applying target '$TARGET' (${TARGET_DESC:-$TARGET})"
