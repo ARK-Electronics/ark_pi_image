@@ -6,21 +6,14 @@
 #
 # Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
 # CONFIG_TXT_DISABLE (stock directives to comment out), CONFIG_TXT_APPEND (block
-# appended verbatim under an ARK-OS marker), TARGET_USB_GADGET (1 = install the
-# Ethernet-over-USB gadget payload from files/usb-gadget/).
+# appended verbatim under an ARK-OS marker).
 
 TARGET_DESC="ARK Just-A-Pi carrier + CM5 (native)"
 TARGET_HOSTNAME="just-a-pi"
 
-# Ethernet-over-USB on the flashing USB-C port (needs the dwc2 peripheral switch below).
-TARGET_USB_GADGET=1
-
 CONFIG_TXT_DISABLE=(
     "camera_auto_detect=1"
     "display_auto_detect=1"
-    # Stock Trixie forces the CM5 dwc2 port to host under [cm5]; gadget mode needs
-    # peripheral (re-added in the append block below).
-    "dtoverlay=dwc2,dr_mode=host"
 )
 
 CONFIG_TXT_APPEND=$(cat <<'EOF'
@@ -47,10 +40,6 @@ dtparam=pciex1
 
 # USB2 host-port VBUS — powers downstream devices
 gpio=24=op,dh
-
-# USB-C flashing port as USB device → Ethernet-over-USB gadget (files/usb-gadget/).
-# The carrier's dedicated host ports are on the RP1 and unaffected.
-dtoverlay=dwc2,dr_mode=peripheral
 
 # Cooling fan: thresholds in milli-°C, speed 0-255
 dtparam=cooling_fan=on
