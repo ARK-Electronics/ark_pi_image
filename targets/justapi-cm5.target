@@ -22,9 +22,14 @@ gpio=27=op,dh
 gpio=20=op,dh
 gpio=22=op,dh
 
-# Cameras: CAM0=J2 (MIPI0), CAM1=J1 (MIPI1). Swap imx219 for your sensor.
+# Cameras: CAM0=J2 (MIPI0), CAM1=J1 (MIPI1). Swap imx219 for your sensor
+# (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
 dtoverlay=imx219,cam0
 dtoverlay=imx219,cam1
+
+# I2C: enable the ARM I2C (GPIO2/3) so the external INA226 power monitor is reachable.
+# The on-Pi suite scans 0x41 on bus 1; confirm the number with `i2cdetect -l` after boot.
+dtparam=i2c_arm=on
 
 # UARTs: 0=debug console (J6, GPIO14/15), 2/3 with CTS/RTS flow control
 enable_uart=1
