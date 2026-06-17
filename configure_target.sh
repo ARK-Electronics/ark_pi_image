@@ -21,6 +21,7 @@ source "$TARGET_FILE"
 : "${TARGET_HOSTNAME:?target $TARGET must set TARGET_HOSTNAME}"
 CONFIG_TXT_APPEND="${CONFIG_TXT_APPEND:-}"
 declare -p CONFIG_TXT_DISABLE >/dev/null 2>&1 || CONFIG_TXT_DISABLE=()
+declare -p TARGET_MODULES >/dev/null 2>&1 || TARGET_MODULES=()
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
@@ -68,6 +69,16 @@ if [ -f "$CONFIG_TXT" ]; then
     fi
 else
     echo "WARNING: $CONFIG_TXT not found — skipping config.txt edits." >&2
+fi
+
+# Kernel modules to autoload at boot. i2c-dev exposes /dev/i2c-* so userspace
+# (i2cdetect, the INA226 manufacturing test) can reach the i2c_arm bus the target
+# enables in config.txt -- enabling the dtparam alone is not enough. Written to
+# /etc/modules-load.d/<target>.conf.
+if ((${#TARGET_MODULES[@]})); then
+    printf '%s\n' "${TARGET_MODULES[@]}" \
+        | sudo tee "$ROOTFS_DIR/etc/modules-load.d/${TARGET}.conf" >/dev/null
+    echo "==> Autoload modules: ${TARGET_MODULES[*]}"
 fi
 
 # Enable SSH; fall back to the boot-partition flag if systemctl can't run in the chroot.

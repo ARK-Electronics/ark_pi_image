@@ -58,3 +58,8 @@ dtparam=fan_temp3=70000
 dtparam=pwr_led_trigger=default-on
 EOF
 )
+
+# Kernel modules to autoload at boot (written to /etc/modules-load.d/<target>.conf by
+# configure_target.sh). i2c-dev exposes /dev/i2c-* so the INA226 power-monitor test can
+# reach the i2c_arm bus enabled above; dtparam=i2c_arm=on alone does not create the node.
+TARGET_MODULES=(i2c-dev)
