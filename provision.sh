@@ -105,6 +105,11 @@ in_chroot sh -c 'ls /usr/lib/ark-os/mavsdk/lib/libmavsdk.so.* >/dev/null 2>&1' |
     exit 1
 }
 
+# Manufacturing test tooling the on-Pi suite (ark_scripts/test_just_a_pi.sh) shells
+# out to but the base image / ark-os deb don't pull in: i2cdetect (INA226 probe).
+echo "==> Installing test tooling (i2c-tools)"
+in_chroot "${APT_INSTALL[@]}" i2c-tools
+
 # Don't `apt-get clean`: /var/cache/apt/archives is build.sh's persistent deb cache
 # (bind-mounted from the host, unmounted before the image is finalized), so the
 # downloaded debs are reused next build and never ship in the image. Just drop the
