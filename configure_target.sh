@@ -71,6 +71,23 @@ else
     echo "WARNING: $CONFIG_TXT not found — skipping config.txt edits." >&2
 fi
 
+# Hailo wants PCIe Gen 3 for full bandwidth (Gen 2 works but throttles the accelerator).
+# When build.sh requests --hailo, make sure the carrier comes up at Gen 3: enable the
+# PCIe link and uncomment/append dtparam=pciex1_gen=3. Targets carry the lane as a
+# commented line (e.g. justapi-cm5); uncomment it if present, otherwise append under a
+# Hailo marker. Skipped silently if config.txt is absent.
+if [ "${HAILO:-0}" = "1" ] && [ -f "$CONFIG_TXT" ]; then
+    echo "==> Enabling PCIe Gen 3 for Hailo"
+    # Ensure the PCIe link itself is on (uncomment a commented dtparam=pciex1 if needed).
+    sudo sed -i -E 's|^([[:space:]]*)#[[:space:]]*(dtparam=pciex1)[[:space:]]*$|\1\2|' "$CONFIG_TXT"
+    if sudo grep -qE '^[[:space:]]*#[[:space:]]*dtparam=pciex1_gen=3[[:space:]]*$' "$CONFIG_TXT"; then
+        sudo sed -i -E 's|^([[:space:]]*)#[[:space:]]*(dtparam=pciex1_gen=3)[[:space:]]*$|\1\2|' "$CONFIG_TXT"
+    elif ! sudo grep -qE '^[[:space:]]*dtparam=pciex1_gen=3[[:space:]]*$' "$CONFIG_TXT"; then
+        printf '\n# --- Hailo AI accelerator (PCIe Gen 3) ---\ndtparam=pciex1\ndtparam=pciex1_gen=3\n' \
+            | sudo tee -a "$CONFIG_TXT" >/dev/null
+    fi
+fi
+
 # Kernel modules to autoload at boot. i2c-dev exposes /dev/i2c-* so userspace
 # (i2cdetect, the INA226 manufacturing test) can reach the i2c_arm bus the target
 # enables in config.txt -- enabling the dtparam alone is not enough. Written to

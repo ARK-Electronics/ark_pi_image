@@ -8,16 +8,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/versions.env"
 STAGING="$SCRIPT_DIR/staging"
 
-# Image name matches build.sh: <target>-<codename>[-ark-os].img. Default to the
-# provisioned (ark-os) image if present, else the stock + target-config one. Pick a
-# non-default target with `TARGET=<target> ./flash.sh <device>`, or point at an image
-# directly with IMG=.
+# Image name matches build.sh: <target>-<codename>[-ark-os][-robotics][-hailo].img.
+# build.sh appends a suffix per opted-in payload, so rather than enumerate the
+# combinations, default to the NEWEST image matching this target+release — i.e. the one
+# the last build produced. Pick a non-default target with `TARGET=<target> ./flash.sh
+# <device>`, or point at an image directly with IMG=.
 if [ -z "${IMG:-}" ]; then
-    if [ -f "$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img" ]; then
-        IMG="$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img"
-    else
-        IMG="$STAGING/${TARGET}-${PIOS_RELEASE}.img"
-    fi
+    newest=""
+    for f in "$STAGING/${TARGET}-${PIOS_RELEASE}.img" "$STAGING/${TARGET}-${PIOS_RELEASE}-"*.img; do
+        [ -f "$f" ] || continue
+        if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest="$f"; fi
+    done
+    # Fall back to the bare stock name (build.sh's no-payload output) for the error path.
+    IMG="${newest:-$STAGING/${TARGET}-${PIOS_RELEASE}.img}"
 fi
 DEV="${1:-}"
 
