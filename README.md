@@ -13,6 +13,13 @@ Linux host with `sudo`. x86_64 works (the arm64 chroot runs under qemu — slowe
 ./flash.sh /dev/sdX           # write it to the SD card
 ```
 
+Opt-in payloads stack onto that. For a robotics image add ROS 2 + OpenCV, and the Hailo
+AI accelerator stack, with `--robotics` / `--hailo` (see [Robotics provisioning](#robotics-provisioning-opt-in)):
+
+```bash
+./build.sh --provision --robotics --hailo   # ARK-OS + ROS 2 + OpenCV + Hailo
+```
+
 - `build.sh` installs host tools and downloads the base image on first run (≈550 MB), then builds in an arm64 chroot. Expect 20–40 min on the first run, faster after: the base image, the debs, and the apt dependency cache (`downloads/apt-cache/`) are reused, so unchanged rebuilds skip the downloads. Output: `staging/justapi-cm5-trixie-ark-os.img`.
 - `flash.sh` with no device lists removable candidates; re-run with the device. It refuses the host's system disk and re-prompts for the device path before writing.
 
@@ -51,11 +58,47 @@ Pinned in `versions.env`:
 
 To move to a newer Pi OS release, bump the base URL/sha256 + `PIOS_RELEASE` together and rebuild the ARK-OS deb for that release.
 
-Every image carries `/etc/ark-os-image.json` recording what built it: the `ark_pi_image` commit (`git describe`, with a `-dirty` suffix if built from uncommitted changes), base-image sha256, target, build time, and the installed ARK-OS version plus the MAVSDK it bundles.
+Every image carries `/etc/ark-os-image.json` recording what built it: the `ark_pi_image` commit (`git describe`, with a `-dirty` suffix if built from uncommitted changes), base-image sha256, target, build time, the installed ARK-OS version plus the MAVSDK it bundles, and (when built with `--robotics`/`--hailo`) the ROS 2 and Hailo versions installed.
 
 ## Without `--provision`
 
 `./build.sh` alone produces a stock Pi OS image with only the carrier config baked (hostname, `config.txt`, the `pi` user, SSH) — no ARK-OS. Output drops the `-ark-os` suffix.
+
+## Robotics provisioning (opt-in)
+
+Two extra flags layer a robotics toolchain onto the image. Both are **off by default**,
+independent, and combinable with each other and with `--provision`:
+
+```bash
+./build.sh --robotics                 # ROS 2 + OpenCV on a stock + target-config image
+./build.sh --provision --robotics     # …on top of ARK-OS
+./build.sh --provision --hailo        # ARK-OS + the Hailo AI accelerator stack
+./build.sh --provision --robotics --hailo   # the lot
+```
+
+The output image name records what went in: `-robotics` and/or `-hailo` are appended after
+the `-ark-os` suffix (e.g. `justapi-cm5-trixie-ark-os-robotics-hailo.img`). `flash.sh` flashes
+the newest matching image by default.
+
+| Flag | Installs | From |
+|---|---|---|
+| `--robotics` | **ROS 2** (`ROS2_PACKAGE`, default `ros-jazzy-ros-base`) + colcon/rosdep dev tools, and **OpenCV** (`python3-opencv`, `libopencv-dev`) | ROS 2: the community [rospian](https://github.com/rospian/rospian-repo) apt repo; OpenCV: Debian |
+| `--hailo` | The **Hailo** `hailo-all` stack (hailort runtime, firmware, rpicam/TAPPAS integration) and sets the carrier to **PCIe Gen 3** | Raspberry Pi apt repo (already in the base image) |
+
+All of this is pinned/overridable in `versions.env` (ROS distro, package variant, apt repo
++ key, OpenCV package list, Hailo package). The base is Pi OS **Lite** (headless), so the ROS 2
+default is `ros-base` — switch to `ros-jazzy-desktop`/`-desktop-full`/`-perception` if you want
+rviz/gazebo and will attach a display. The rospian apt source is left in the image, so
+`sudo apt install ros-jazzy-<pkg>` keeps working on the device. ROS 2 is auto-sourced for login
+shells via `/etc/profile.d/ros2.sh`, so `ros2 …` works out of the box; run `rosdep update` once
+on the device (needs network).
+
+> **Caveats.** ROS 2 has **no official Debian/Trixie packages** — Debian is a Tier-3 platform and
+> upstream recommends Docker; `--robotics` therefore relies on a community build farm. The Hailo
+> M.2 module sits in the Just A Pi's PCIe/M.2 slot; `--hailo` enables PCIe Gen 3 for full bandwidth
+> (the `hailo_pci` driver ships in the Pi kernel, so no DKMS build runs in the chroot). These paths
+> haven't yet been validated on hardware — treat a robotics image as **experimental**. The manifest
+> at `/etc/ark-os-image.json` records the ROS 2 and Hailo versions actually installed.
 
 ## Dev mode (unreleased ARK-OS)
 

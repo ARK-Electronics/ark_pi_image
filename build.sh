@@ -32,6 +32,7 @@ fmt_duration() {
 # lib's filename.
 write_image_manifest() {
     local describe commit branch built ark_os mavsdk provisioned
+    local robotics_on hailo_on ros2_ver ros2_distro hailo_ver
     built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         describe="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
@@ -52,6 +53,22 @@ write_image_manifest() {
     else
         provisioned=false; ark_os=null; mavsdk=null
     fi
+    # Robotics payload (provision-robotics.sh). Record what was actually requested and,
+    # for an installed component, the version dpkg has — so the card self-documents its
+    # ROS 2 / Hailo provenance alongside the ARK-OS one.
+    if [ "$ROBOTICS" -eq 1 ]; then
+        robotics_on=true
+        ros2_distro="\"${ROS2_DISTRO:-unknown}\""
+        ros2_ver="\"$(sudo chroot "$ROOTFS" dpkg-query -W -f='${Version}' "${ROS2_PACKAGE}" 2>/dev/null || echo unknown)\""
+    else
+        robotics_on=false; ros2_distro=null; ros2_ver=null
+    fi
+    if [ "$HAILO" -eq 1 ]; then
+        hailo_on=true
+        hailo_ver="\"$(sudo chroot "$ROOTFS" dpkg-query -W -f='${Version}' "${HAILO_PACKAGE}" 2>/dev/null || echo unknown)\""
+    else
+        hailo_on=false; hailo_ver=null
+    fi
     sudo tee "$ROOTFS/etc/ark-os-image.json" >/dev/null <<EOF
 {
   "image": "$(basename "$OUT_IMG")",
@@ -59,22 +76,35 @@ write_image_manifest() {
   "built_utc": "$built",
   "base_image": { "release": "$PIOS_RELEASE", "sha256": "${PIOS_IMAGE_SHA256:-}" },
   "builder": { "repo": "ark_pi_image", "git_describe": "$describe", "git_commit": "$commit", "git_branch": "$branch" },
-  "ark_os": { "provisioned": $provisioned, "version": $ark_os, "mavsdk": $mavsdk }
+  "ark_os": { "provisioned": $provisioned, "version": $ark_os, "mavsdk": $mavsdk },
+  "robotics": {
+    "ros2": { "installed": $robotics_on, "distro": $ros2_distro, "package": "${ROS2_PACKAGE:-}", "version": $ros2_ver },
+    "hailo": { "installed": $hailo_on, "package": "${HAILO_PACKAGE:-}", "version": $hailo_ver }
+  }
 }
 EOF
 }
 
-# Args: an optional target (default from versions.env) plus --provision, which adds the
-# ARK-OS payload; without it the image is stock Pi OS + target config.
+# Args: an optional target (default from versions.env) plus opt-in payload flags. Without
+# any flag the image is stock Pi OS + target config. Flags are independent and combinable:
+#   --provision : install the ARK-OS payload (provision.sh)
+#   --robotics  : install ROS 2 + OpenCV          (provision-robotics.sh)
+#   --hailo     : install the Hailo AI stack + set the carrier to PCIe Gen 3
 PROVISION=0
+ROBOTICS=0
+HAILO=0
 _target_arg=""
 for arg in "$@"; do
     case "$arg" in
         --provision) PROVISION=1 ;;
+        --robotics)  ROBOTICS=1 ;;
+        --hailo)     HAILO=1 ;;
         -h|--help)
-            echo "Usage: $0 [target] [--provision]"
+            echo "Usage: $0 [target] [--provision] [--robotics] [--hailo]"
             echo "  target:      a name from targets/*.target (default from versions.env: $TARGET)"
             echo "  --provision: also install the ARK-OS payload (off by default)"
+            echo "  --robotics:  also install ROS 2 + OpenCV (off by default)"
+            echo "  --hailo:     also install the Hailo AI accelerator stack and set PCIe Gen 3 (off by default)"
             exit 0
             ;;
         -*) echo "ERROR: unknown option '$arg' (see '$0 --help')." >&2; exit 1 ;;
@@ -85,7 +115,7 @@ for arg in "$@"; do
     esac
 done
 TARGET="${_target_arg:-$TARGET}"
-export TARGET
+export TARGET ROBOTICS HAILO
 TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
 [ -f "$TARGET_FILE" ] || {
     echo "ERROR: unknown target '$TARGET' ($TARGET_FILE not found). Available targets:" >&2
@@ -124,12 +154,14 @@ if ! stock_image_ok; then
     stock_image_ok || { echo "ERROR: stock image still missing or mismatched after setup.sh ($STOCK_XZ)." >&2; exit 1; }
 fi
 
-# -ark-os suffix marks a provisioned image.
-if [ "$PROVISION" -eq 1 ]; then
-    OUT_IMG="$STAGING/${TARGET}-${PIOS_RELEASE}-ark-os.img"
-else
-    OUT_IMG="$STAGING/${TARGET}-${PIOS_RELEASE}.img"
-fi
+# Name the image after the payloads baked in: -ark-os (provisioned), -robotics (ROS2 +
+# OpenCV), -hailo (Hailo stack), appended in that order. A stock image keeps the bare
+# <target>-<codename>.img name. flash.sh picks the newest matching image by default.
+IMG_SUFFIX=""
+[ "$PROVISION" -eq 1 ] && IMG_SUFFIX+="-ark-os"
+[ "$ROBOTICS" -eq 1 ] && IMG_SUFFIX+="-robotics"
+[ "$HAILO" -eq 1 ] && IMG_SUFFIX+="-hailo"
+OUT_IMG="$STAGING/${TARGET}-${PIOS_RELEASE}${IMG_SUFFIX}.img"
 ROOTFS="$STAGING/rootfs"
 mkdir -p "$STAGING" "$ROOTFS"
 
@@ -195,18 +227,30 @@ sudo cp -f /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 export ROOTFS_DIR="$ROOTFS"
 echo "==> Configuring target (arm64 chroot)"
 "$SCRIPT_DIR/configure_target.sh"
-if [ "$PROVISION" -eq 1 ]; then
-    echo "==> Installing ARK-OS payload (arm64 chroot)"
-    # Persist apt's downloaded dependency .debs across builds: bind-mount a host cache
-    # over the chroot's archive dir so an unchanged rebuild reuses them instead of
-    # re-fetching the whole dependency tree. cleanup() unmounts it; the image keeps none.
+
+# Any apt-installing payload (ARK-OS, robotics, Hailo) benefits from a persistent deb
+# cache: bind-mount a host dir over the chroot's archive dir so an unchanged rebuild
+# reuses the downloaded .debs instead of re-fetching the whole dependency tree.
+# cleanup() unmounts it before the image is finalized; the image itself keeps none.
+if [ "$PROVISION" -eq 1 ] || [ "$ROBOTICS" -eq 1 ] || [ "$HAILO" -eq 1 ]; then
     APT_CACHE="$DOWNLOADS/apt-cache"
     mkdir -p "$APT_CACHE"
     sudo mkdir -p "$ROOTFS/var/cache/apt/archives"
     sudo mount --bind "$APT_CACHE" "$ROOTFS/var/cache/apt/archives"
+fi
+
+if [ "$PROVISION" -eq 1 ]; then
+    echo "==> Installing ARK-OS payload (arm64 chroot)"
     "$SCRIPT_DIR/provision.sh"
 else
     echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"
+fi
+
+if [ "$ROBOTICS" -eq 1 ] || [ "$HAILO" -eq 1 ]; then
+    echo "==> Installing robotics payload (arm64 chroot)"
+    "$SCRIPT_DIR/provision-robotics.sh"
+else
+    echo "==> Skipping robotics payload (no --robotics/--hailo)"
 fi
 
 echo "==> Writing image manifest (/etc/ark-os-image.json)"
