@@ -1,14 +1,18 @@
-# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4.  [STUB — untested on hardware]
+# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 4.
 #
-# The config below is transcribed from the Pi6X Flow flashing guide but has never been
-# validated on a board, so it's gated off. Remove the TARGET_STUB line to build it.
+# config.txt overlays from the ARK Pi6X Flow flashing guide (values verbatim; comments
+# moved to their own lines — config.txt doesn't support inline comments after a directive):
 #   docs.arkelectron.com/products/flight-controller/ark-pi6x-flow/flashing-guide/after-flashing-before-installing
 #
 # The Pi6X Flow has an onboard ARKV6X flight controller wired to the Pi over UART
-# (uart3/uart4, hardware CTS/RTS) and USB, plus two CSI ports and a cooling-fan header.
+# (uart3 = external GPS/telem, uart4 = Telem2 to FC, both with hardware CTS/RTS) and USB,
+# plus two CSI ports and a cooling-fan header.
+#
+# Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
+# CONFIG_TXT_DISABLE (stock directives to comment out), CONFIG_TXT_APPEND (block
+# appended verbatim under an ARK-OS marker).
 
-TARGET_STUB=1
-TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4  [untested]"
+TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM4"
 TARGET_HOSTNAME="pi6x"
 
 CONFIG_TXT_DISABLE=(
@@ -17,18 +21,27 @@ CONFIG_TXT_DISABLE=(
 )
 
 CONFIG_TXT_APPEND=$(cat <<'EOF'
-# UART links to the onboard ARKV6X, with hardware flow control
+# UART: debug console + links to the onboard ARKV6X (hardware CTS/RTS)
 enable_uart=1
+# General-purpose external UART
 dtoverlay=uart3,ctsrts
+# Telem2 to the flight controller
 dtoverlay=uart4,ctsrts
-# Carrier GPIO line initial states (per ARK hardware docs)
+
+# Carrier GPIO line initial states
+# Drive FMU_RST_REQ low
 gpio=25=op,dl
+# Drive USB_OTG_FS_VBUS high to enable FC USB
 gpio=27=op,dh
+# Drive USB Hub nRESET high (needed on Rev 1 only)
 gpio=26=op,dh
-# CSI cameras (IMX219 modules)
+
+# Cameras: CAM0/CAM1 CSI. Swap imx219 for your sensor
+# (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
 dtoverlay=imx219,cam0
 dtoverlay=imx219,cam1
-# Cooling fan
+
+# Cooling fan on GPIO 19
 dtoverlay=gpio-fan,gpiopin=19
 EOF
 )

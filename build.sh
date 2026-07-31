@@ -9,6 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=versions.env
 source "$SCRIPT_DIR/versions.env"
+# shellcheck source=common.sh
+source "$SCRIPT_DIR/common.sh"
 DOWNLOADS="$SCRIPT_DIR/downloads"
 STAGING="$SCRIPT_DIR/staging"
 export DOWNLOADS
@@ -64,40 +66,49 @@ write_image_manifest() {
 EOF
 }
 
-# Args: an optional target (default from versions.env) plus --provision, which adds the
-# ARK-OS payload; without it the image is stock Pi OS + target config.
+# Args: --target <name> (or interactive prompt / TARGET= env) plus --provision, which
+# adds the ARK-OS payload; without it the image is stock Pi OS + target config.
 PROVISION=0
 _target_arg=""
-for arg in "$@"; do
-    case "$arg" in
-        --provision) PROVISION=1 ;;
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --provision) PROVISION=1; shift ;;
+        --target)
+            [ -n "${2:-}" ] || { echo "ERROR: --target requires a name (see --help)." >&2; exit 1; }
+            _target_arg="$2"; shift 2
+            ;;
+        --target=*)
+            _target_arg="${1#--target=}"; shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [target] [--provision]"
-            echo "  target:      a name from targets/*.target (default from versions.env: $TARGET)"
-            echo "  --provision: also install the ARK-OS payload (off by default)"
+            echo "Usage: $0 --target <name> [--provision]"
+            echo "       $0 [--provision]                 # prompts for target"
+            echo
+            echo "  --target     carrier × module from targets/*.target"
+            echo "  --provision  also install the ARK-OS payload (off by default)"
+            echo
+            echo "Available targets:"
+            list_targets_with_desc | while IFS='|' read -r name desc; do
+                printf '  %-14s %s\n' "$name" "$desc"
+            done
+            echo
+            echo "Non-interactive: pass --target, or set TARGET= in the environment."
             exit 0
             ;;
-        -*) echo "ERROR: unknown option '$arg' (see '$0 --help')." >&2; exit 1 ;;
+        -*)
+            echo "ERROR: unknown option '$1' (see '$0 --help')." >&2
+            exit 1
+            ;;
         *)
-            [ -z "$_target_arg" ] || { echo "ERROR: multiple targets given ('$_target_arg', '$arg')." >&2; exit 1; }
-            _target_arg="$arg"
+            echo "ERROR: unexpected argument '$1' (targets are selected with --target)." >&2
+            echo "       See '$0 --help'." >&2
+            exit 1
             ;;
     esac
 done
-TARGET="${_target_arg:-$TARGET}"
-export TARGET
-TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
-[ -f "$TARGET_FILE" ] || {
-    echo "ERROR: unknown target '$TARGET' ($TARGET_FILE not found). Available targets:" >&2
-    for f in "$SCRIPT_DIR"/targets/*.target; do [ -e "$f" ] && echo "  $(basename "${f%.target}")" >&2; done
-    exit 1
-}
-# Refuse to build a stub target (carrier/module specifics not defined yet).
-if ( source "$TARGET_FILE" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
-    echo "ERROR: target '$TARGET' is a stub — its specifics aren't defined yet." >&2
-    echo "       Fill in $TARGET_FILE (see targets/justapi-cm5.target) and remove the TARGET_STUB line to build it." >&2
-    exit 1
-fi
+
+resolve_target "$_target_arg"
+
 # Tee all output (incl. configure_target.sh + provision.sh) to staging/build.log.txt.
 mkdir -p "$STAGING"
 exec > >(tee "$STAGING/build.log.txt") 2>&1
@@ -218,4 +229,4 @@ LOOP=""
 trap - EXIT
 
 echo "==> Golden image ready in $(fmt_duration "$SECONDS"): $OUT_IMG"
-echo "    Flash it with: ./flash.sh <device>   (e.g. /dev/sda or /dev/mmcblk0)"
+echo "    Flash it with: ./flash.sh --target $TARGET"
