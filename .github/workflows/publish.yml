@@ -1,0 +1,61 @@
+# Publishes a release tag's images to downloads.arkelectron.com and makes them the
+# carrier's latest/. Run it once the images from the tag's Release run pass bench
+# testing; those exact files are what get published.
+
+name: Publish to downloads.arkelectron.com
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. pi6x-v1.0.0
+        required: true
+
+concurrency:
+  group: downloads-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: downloads
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ARK-Electronics/downloads
+          path: downloads
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-1
+          mask-aws-account-id: true
+
+      - name: Publish
+        env:
+          DOWNLOADS_BUCKET: ${{ vars.DOWNLOADS_BUCKET }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^(pi6x|just-a-pi)-(v[0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::$TAG is not a release tag"; exit 1; }
+          product=${BASH_REMATCH[1]}
+          version=${BASH_REMATCH[2]}
+
+          # A tag push runs Release with the tag as its branch
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --branch "$TAG" --event push \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          [ -n "$run" ] || { echo "::error::no successful Release run for $TAG"; exit 1; }
+          gh run download "$run" --repo "$GITHUB_REPOSITORY" --dir assets
+          mkdir release
+          mv assets/*/*.img.xz release/
+          (cd release && sha256sum -- * > SHA256SUMS)
+
+          downloads/downloads.py publish release "pi/$product/$version"
+          downloads/downloads.py promote "pi/$product/$version" "pi/$product/latest"
+          downloads/downloads.py index

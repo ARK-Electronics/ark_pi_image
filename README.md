@@ -7,7 +7,9 @@ Supported targets:
 | Target | Carrier + module | Hostname |
 |---|---|---|
 | `justapi-cm5` | [ARK Just A Pi](https://docs.arkelectron.com/products/embedded-computers/ark-just-a-pi) + CM5 | `just-a-pi.local` |
+| `justapi-cm4` | [ARK Just A Pi](https://docs.arkelectron.com/products/embedded-computers/ark-just-a-pi) + CM4 | `just-a-pi.local` |
 | `pi6x-cm4` | [ARK Pi6X Flow](https://docs.arkelectron.com/products/flight-controller/ark-pi6x-flow) + CM4 | `pi6x.local` |
+| `pi6x-cm5` | [ARK Pi6X Flow](https://docs.arkelectron.com/products/flight-controller/ark-pi6x-flow) + CM5 | `pi6x.local` |
 
 This automates each carrier's manual flashing guide once, at build time ([Just A Pi](https://docs.arkelectron.com/products/embedded-computers/ark-just-a-pi/flashing-guide), [Pi6X Flow](https://docs.arkelectron.com/products/flight-controller/ark-pi6x-flow/flashing-guide)).
 
@@ -16,7 +18,7 @@ This automates each carrier's manual flashing guide once, at build time ([Just A
 Linux host with `sudo`. x86_64 works (the arm64 chroot runs under qemu — slower); a native arm64 host or a Pi is faster. Needs ~10 GB free.
 
 ```bash
-./build.sh --target pi6x-cm4 --provision   # or justapi-cm5
+./build.sh --target pi6x-cm4 --provision   # or pi6x-cm5, justapi-cm5, justapi-cm4
 ./flash.sh --target pi6x-cm4               # auto-detects the SD card; confirms with y/N
 ```
 
@@ -30,8 +32,8 @@ Each step tees its full output to `staging/{setup,build,flash}.log.txt` for post
 Insert the card into the carrier with the compute module installed and power on. It comes up headless:
 
 ```bash
-ssh pi@just-a-pi.local     # justapi-cm5; password: pi
-ssh pi@pi6x.local          # pi6x-cm4;    password: pi
+ssh pi@just-a-pi.local     # justapi-*; password: pi
+ssh pi@pi6x.local          # pi6x-*;    password: pi
 ```
 
 > **Compute module with onboard eMMC**: flash over USB with [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc), which exposes the eMMC as `/dev/sdX`, then `./flash.sh --target <name> /dev/sdX`. On the Just A Pi, hold the `BOOT` button while powering on and connect the USB JST-GH port to the host (USB-C carries the CM5's USB 3.0 port, which rpiboot doesn't use). On the Pi6X, short the `BOOT` header next to the micro USB and connect the micro USB; remove the jumper afterwards.
@@ -39,6 +41,10 @@ ssh pi@pi6x.local          # pi6x-cm4;    password: pi
 > **Before shipping real units, change the baked `pi`/`pi` password** in `versions.env` (it's stored identically on every card). For a production line, prefer Pi OS's `userconf.txt` first-boot mechanism.
 
 ---
+
+## Releases
+
+Each carrier is released on its own tag, `pi6x-v<major>.<minor>.<patch>` or `just-a-pi-v<major>.<minor>.<patch>`. Pushing the tag runs **Release**, which builds every `targets/<carrier>-*.target` image (`just-a-pi` builds `justapi-*`) and keeps the compressed images as that run's artifacts. Bench-test those files (`gh run download <run-id>`), then run **Publish to downloads.arkelectron.com** with the tag. It uploads them to `downloads.arkelectron.com/pi/<carrier>/<version>/` and makes that version the carrier's `latest/`. Release can also be run by hand on a branch to build a carrier's images for testing; those runs are never published.
 
 ## Targets
 

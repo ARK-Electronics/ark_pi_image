@@ -1,0 +1,74 @@
+# Builds a carrier's golden images when its release tag is pushed and keeps them as this
+# run's artifacts. They reach downloads.arkelectron.com only through publish.yml, after
+# bench testing. Run by hand on a branch to build a carrier's images for testing.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'pi6x-v[0-9]*.[0-9]*.[0-9]*'
+      - 'just-a-pi-v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+    inputs:
+      product:
+        description: Carrier to build from this ref
+        type: choice
+        options: [pi6x, just-a-pi]
+
+jobs:
+  targets:
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: targets
+        env:
+          PRODUCT: ${{ inputs.product }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            [[ "$GITHUB_REF_NAME" =~ ^(pi6x|just-a-pi)-v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+              || { echo "::error::$GITHUB_REF_NAME: expected pi6x-v<major>.<minor>.<patch> or just-a-pi-v<major>.<minor>.<patch>"; exit 1; }
+            PRODUCT=${BASH_REMATCH[1]}
+          fi
+          case "$PRODUCT" in
+            pi6x) prefix=pi6x ;;
+            just-a-pi) prefix=justapi ;;
+            *) echo "::error::unknown product $PRODUCT"; exit 1 ;;
+          esac
+          targets=$(for f in targets/"$prefix"-*.target; do basename "$f" .target; done | jq -R . | jq -cs .)
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The base image, the output image and the chroot's apt cache need more than / has free
+      - name: Stage on /mnt
+        run: |
+          sudo mkdir -p /mnt/staging /mnt/downloads
+          sudo chown "$(id -u):$(id -g)" /mnt/staging /mnt/downloads
+          ln -s /mnt/staging staging
+          ln -s /mnt/downloads downloads
+
+      - name: Build
+        run: ./build.sh --target ${{ matrix.target }} --provision
+
+      - name: Compress
+        run: xz -T0 -6 staging/${{ matrix.target }}-*-ark-os.img
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: staging/${{ matrix.target }}-*-ark-os.img.xz
+          if-no-files-found: error
+          compression-level: 0
