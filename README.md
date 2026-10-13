@@ -23,7 +23,7 @@ Linux host with `sudo`. x86_64 works (the arm64 chroot runs under qemu — slowe
 Omit `--target` and both scripts prompt with a numbered list of carriers. Non-interactive/CI: pass `--target`, or set `TARGET=` in the environment.
 
 - `build.sh` installs host tools and downloads the base image on first run (≈550 MB), then builds in an arm64 chroot. Expect 20–40 min on the first run, faster after: the base image, the debs, and the apt dependency cache (`downloads/apt-cache/`) are reused, so unchanged rebuilds skip the downloads. Output: `staging/<target>-trixie-ark-os.img`.
-- `flash.sh` finds the sole removable USB/SD device (or lets you pick when several are present), shows device + image, and asks `Proceed? [y/N]`. It refuses the host's system disk. You can still pass a device path explicitly: `./flash.sh --target pi6x-cm4 /dev/sdX`.
+- `flash.sh` finds the sole removable USB/SD device (or lets you pick when several are present), shows device + image, and asks `Proceed? [y/N]`. It refuses partitions and any disk backing the host's system mounts or swap. Without a terminal, pass the device path. You can still pass a device path explicitly: `./flash.sh --target pi6x-cm4 /dev/sdX`.
 
 Each step tees its full output to `staging/{setup,build,flash}.log.txt` for post-mortem.
 
@@ -34,7 +34,7 @@ ssh pi@just-a-pi.local     # justapi-cm5; password: pi
 ssh pi@pi6x.local          # pi6x-cm4;    password: pi
 ```
 
-> **CM5 with onboard eMMC** has no SD slot — flash over USB instead. Short the `BOOT` jumper (next to UART4), connect USB-C to the host, run [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc) so the eMMC appears as `/dev/sdX`, `./flash.sh --target justapi-cm5 /dev/sdX`, then remove the jumper and boot.
+> **Compute module with onboard eMMC**: flash over USB with [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc), which exposes the eMMC as `/dev/sdX`, then `./flash.sh --target <name> /dev/sdX`. On the Just A Pi, hold the `BOOT` button while powering on and connect the USB JST-GH port to the host (USB-C carries the CM5's USB 3.0 port, which rpiboot doesn't use). On the Pi6X, short the `BOOT` header next to the micro USB and connect the micro USB; remove the jumper afterwards.
 
 > **Before shipping real units, change the baked `pi`/`pi` password** in `versions.env` (it's stored identically on every card). For a production line, prefer Pi OS's `userconf.txt` first-boot mechanism.
 
