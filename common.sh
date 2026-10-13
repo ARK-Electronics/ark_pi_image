@@ -84,31 +84,40 @@ resolve_target() {
 
 # --- flash helpers ----------------------------------------------------------
 
-# Echo candidate removable block devices (one path per line): USB disks and mmcblk,
-# excluding the disk that holds the running root filesystem.
-list_flash_candidates() {
-    local root_src root_pk name tran pk
-    root_src="$(findmnt -no SOURCE / 2>/dev/null || true)"
-    root_pk="$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1 || true)"
-    # Fall back: if root is already a whole disk (no partition), PKNAME is empty.
-    if [ -z "$root_pk" ] && [ -n "$root_src" ]; then
-        root_pk="$(lsblk -no NAME "$root_src" 2>/dev/null | head -1 || true)"
-    fi
-    # NAME + TRAN only — MODEL can contain spaces and would break field splitting.
-    while read -r name tran; do
-        [ -n "$name" ] || continue
-        pk="${name#/dev/}"
-        if [ -n "$root_pk" ] && [ "$pk" = "$root_pk" ]; then
-            continue
-        fi
-        # Prefer USB transports; also accept mmcblk (onboard SD readers).
-        if [ "$tran" = "usb" ] || [[ "$pk" == mmcblk* ]]; then
-            printf '%s\n' "$name"
-        fi
-    done < <(lsblk -dpno NAME,TRAN 2>/dev/null)
+# Print the whole disks (sda, nvme0n1, mmcblk0) that back the running system: every
+# disk under the system mounts and active swap. findmnt -v drops a btrfs [/subvol]
+# suffix, and lsblk -s walks up through partitions, LUKS and LVM to the disk.
+system_disks() {
+    local mp src
+    {
+        for mp in / /boot /boot/efi /boot/firmware /usr /var /home; do
+            findmnt -nvo SOURCE --mountpoint "$mp" 2>/dev/null || true
+        done
+        swapon --noheadings --show=NAME 2>/dev/null || true
+    } | while read -r src; do
+        [ -b "$src" ] || continue
+        lsblk -nsro NAME,TYPE "$src" 2>/dev/null | awk '$2 == "disk" { print $1 }'
+    done | sort -u
 }
 
-# Resolve DEV: explicit arg, sole removable candidate, or interactive pick among many.
+# Echo candidate removable block devices (one path per line): non-empty USB disks and
+# mmcblk cards, excluding the system disks and eMMC boot areas.
+list_flash_candidates() {
+    local sys name type size tran
+    sys=" $(system_disks | tr '\n' ' ') "
+    # TRAN last: it is empty for mmcblk, and read would shift the fields after it.
+    while read -r name type size tran; do
+        [ "$type" = disk ] || continue
+        [ "${size:-0}" -gt 0 ] || continue
+        [[ "$name" =~ mmcblk[0-9]+boot[0-9]+$ ]] && continue
+        [[ "$sys" == *" ${name#/dev/} "* ]] && continue
+        if [ "$tran" = "usb" ] || [[ "$name" == /dev/mmcblk* ]]; then
+            printf '%s\n' "$name"
+        fi
+    done < <(lsblk -dpnbo NAME,TYPE,SIZE,TRAN 2>/dev/null)
+}
+
+# Resolve DEV: explicit arg, or (on a TTY) the sole removable candidate or a pick among many.
 # Call as: resolve_flash_device "${1:-}"
 resolve_flash_device() {
     local arg="${1:-}"
@@ -123,17 +132,17 @@ resolve_flash_device() {
         echo "       Insert an SD card (or attach the CM via rpiboot) and re-run, or pass a device path." >&2
         exit 1
     fi
-    if [ "${#candidates[@]}" -eq 1 ]; then
-        DEV="${candidates[0]}"
-        return
-    fi
     if [ ! -t 0 ]; then
-        echo "ERROR: multiple removable devices and stdin is not a TTY (cannot prompt)." >&2
+        echo "ERROR: no device given and stdin is not a TTY (cannot confirm a pick)." >&2
         echo "       Pass the device path explicitly. Candidates:" >&2
         for c in "${candidates[@]}"; do
             printf '  %s  (%s  %s)\n' "$c" "$(lsblk -dno SIZE "$c" | xargs)" "$(lsblk -dno MODEL "$c" 2>/dev/null | xargs || true)" >&2
         done
         exit 1
+    fi
+    if [ "${#candidates[@]}" -eq 1 ]; then
+        DEV="${candidates[0]}"
+        return
     fi
     echo "Multiple removable devices found:"
     for c in "${candidates[@]}"; do

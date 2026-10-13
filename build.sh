@@ -229,4 +229,9 @@ LOOP=""
 trap - EXIT
 
 echo "==> Golden image ready in $(fmt_duration "$SECONDS"): $OUT_IMG"
-echo "    Flash it with: ./flash.sh --target $TARGET"
+if [ "$PROVISION" -eq 1 ]; then
+    echo "    Flash it with: ./flash.sh --target $TARGET"
+else
+    # flash.sh prefers an -ark-os image, which may be an older build of this target.
+    echo "    Flash it with: IMG=$OUT_IMG ./flash.sh"
+fi

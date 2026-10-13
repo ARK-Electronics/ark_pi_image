@@ -78,13 +78,14 @@ fi
 
 resolve_flash_device "$_device_arg"
 
+DEV="$(readlink -f "$DEV")"
 [ -b "$DEV" ] || { echo "ERROR: $DEV is not a block device." >&2; exit 1; }
-
-# Refuse to write to the disk that holds the running root filesystem.
-ROOT_SRC="$(findmnt -no SOURCE / 2>/dev/null || true)"
-ROOT_PK="$(lsblk -no PKNAME "$ROOT_SRC" 2>/dev/null | head -1 || true)"
-if [ -n "$ROOT_PK" ] && [ "$DEV" = "/dev/$ROOT_PK" ]; then
-    echo "ERROR: $DEV holds the running system (mounted at /). Refusing to flash it." >&2
+[ "$(lsblk -dno TYPE "$DEV")" = disk ] || {
+    echo "ERROR: $DEV is not a whole disk (pass e.g. /dev/sdb, not /dev/sdb1)." >&2
+    exit 1
+}
+if system_disks | grep -qx "${DEV#/dev/}"; then
+    echo "ERROR: $DEV holds the running system. Refusing to flash it." >&2
     exit 1
 fi
 
