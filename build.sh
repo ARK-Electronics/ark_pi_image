@@ -115,7 +115,7 @@ exec > >(tee "$STAGING/build.log.txt") 2>&1
 
 echo "==> Target: $TARGET"
 
-sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
+sudo true || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
 
 # Delegate download + verification to setup.sh when the cached base image is missing or
 # doesn't match the pinned sha256 (e.g. a cache left from a previous release).
