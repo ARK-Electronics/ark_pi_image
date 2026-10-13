@@ -5,7 +5,7 @@
 #   docs.arkelectron.com/products/flight-controller/ark-pi6x-flow/flashing-guide/after-flashing-before-installing
 #
 # The Pi6X Flow has an onboard ARKV6X flight controller wired to the Pi over UART
-# (uart3 = external GPS/telem, uart4 = Telem2 to FC, both with hardware CTS/RTS) and USB,
+# (uart4 = Telem2, with hardware CTS/RTS) and USB; uart3 is the external general-purpose UART,
 # plus two CSI ports and a cooling-fan header.
 #
 # Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
@@ -21,7 +21,7 @@ CONFIG_TXT_DISABLE=(
 )
 
 CONFIG_TXT_APPEND=$(cat <<'EOF'
-# UART: debug console + links to the onboard ARKV6X (hardware CTS/RTS)
+# UARTs: debug console, external UART, Telem2 to the onboard ARKV6X (hardware CTS/RTS)
 enable_uart=1
 # General-purpose external UART
 dtoverlay=uart3,ctsrts
@@ -36,10 +36,10 @@ gpio=27=op,dh
 # Drive USB Hub nRESET high (needed on Rev 1 only)
 gpio=26=op,dh
 
-# Cameras: CAM0/CAM1 CSI. Swap imx219 for your sensor
-# (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
+# Cameras: CAM0 takes the cam0 parameter, CAM1 is the overlay default. Swap imx219 for your
+# sensor (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
 dtoverlay=imx219,cam0
-dtoverlay=imx219,cam1
+dtoverlay=imx219
 
 # Cooling fan on GPIO 19
 dtoverlay=gpio-fan,gpiopin=19
