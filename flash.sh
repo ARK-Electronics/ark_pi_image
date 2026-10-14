@@ -114,6 +114,8 @@ for part in $(lsblk -lnpo NAME "$DEV" | tail -n +2); do
 done
 
 echo "==> Writing image (several minutes)…"
-sudo dd if="$IMG" of="$DEV" bs=4M conv=fsync status=progress
+# oflag=direct: without it dd reports the whole image written while most of it is still
+# in the page cache, and a card pulled then is half-written.
+sudo dd if="$IMG" of="$DEV" bs=4M oflag=direct conv=fsync status=progress
 sync
 echo "==> Done. Insert the card into the Pi and power on."
