@@ -32,13 +32,15 @@ Each step tees its full output to `staging/{setup,build,flash}.log.txt` for post
 Insert the card into the carrier with the compute module installed and power on. It comes up headless:
 
 ```bash
-ssh pi@just-a-pi.local     # justapi-*; password: pi
-ssh pi@pi6x.local          # pi6x-*;    password: pi
+ssh pi@just-a-pi.local     # justapi-*
+ssh pi@pi6x.local          # pi6x-*
 ```
 
-> **Compute module with onboard eMMC**: flash over USB with [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc), which exposes the eMMC as `/dev/sdX`, then `./flash.sh --target <name> /dev/sdX`. On the Just A Pi, hold the `BOOT` button while powering on and connect the USB JST-GH port to the host (USB-C carries the CM5's USB 3.0 port, which rpiboot doesn't use). On the Pi6X, short the `BOOT` header next to the micro USB and connect the micro USB; remove the jumper afterwards.
+The login is `pi` / `raspberry` on every card; change it with `passwd`.
 
-> **Before shipping real units, change the baked `pi`/`pi` password** in `versions.env` (it's stored identically on every card). For a production line, prefer Pi OS's `userconf.txt` first-boot mechanism.
+Every target loads the `imx708` overlay (Camera Module 3), the camera ARK tests in production. Compute modules don't auto-detect cameras, so for another sensor change the `dtoverlay=imx708` lines in `/boot/firmware/config.txt` (`imx219` = Camera Module 2, `imx477` = HQ).
+
+> **Compute module with onboard eMMC**: flash over USB with [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc), which exposes the eMMC as `/dev/sdX`, then `./flash.sh --target <name> /dev/sdX`. On the Just A Pi, hold the `BOOT` button while powering on and connect the USB JST-GH port to the host (USB-C carries the CM5's USB 3.0 port, which rpiboot doesn't use). On the Pi6X, short the `BOOT` header next to the micro USB and connect the micro USB; remove the jumper afterwards.
 
 ---
 

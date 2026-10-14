@@ -25,9 +25,9 @@ gpio=27=op,dh
 gpio=20=op,dh
 gpio=22=op,dh
 
-# Camera on the CAM1 connector. Swap imx219 for your sensor
-# (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
-dtoverlay=imx219
+# Camera on the CAM1 connector. Compute modules don't auto-detect cameras, so the overlay
+# must match the sensor: imx708 = Camera Module 3, imx219 = Camera Module 2, imx477 = HQ.
+dtoverlay=imx708
 
 # I2C: enable the ARM I2C (GPIO2/3) so the external INA226 power monitor is reachable.
 dtparam=i2c_arm=on
