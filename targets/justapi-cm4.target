@@ -45,3 +45,7 @@ gpio=24=op,dh
 dtparam=pwr_led_trigger=default-on
 EOF
 )
+
+# Kernel modules to autoload at boot (written to /etc/modules-load.d/<target>.conf by
+# configure_target.sh). dtparam=i2c_arm=on alone does not create /dev/i2c-1.
+TARGET_MODULES=(i2c-dev)
