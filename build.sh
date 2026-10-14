@@ -168,7 +168,16 @@ cleanup() {
     sudo umount "$ROOTFS/dev" 2>/dev/null || true
     sudo umount "$ROOTFS/sys" 2>/dev/null || true
     sudo umount "$ROOTFS/proc" 2>/dev/null || true
-    sudo umount "$ROOTFS" 2>/dev/null || true
+    # Daemons a package script started inside the chroot keep the rootfs busy, and a rootfs
+    # left mounted has not been flushed into the image.
+    # Only while it is a mountpoint: on a plain directory, fuser -m means the host filesystem.
+    if mountpoint -q "$ROOTFS"; then
+        sudo fuser -km "$ROOTFS" 2>/dev/null || true
+    fi
+    for _ in 1 2 3 4 5; do
+        mountpoint -q "$ROOTFS" || break
+        sudo umount "$ROOTFS" 2>/dev/null || sleep 1
+    done
     [ -n "$LOOP" ] && sudo losetup -d "$LOOP" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -227,6 +236,10 @@ echo "==> Unmounting"
 cleanup
 LOOP=""
 trap - EXIT
+if mountpoint -q "$ROOTFS"; then
+    echo "ERROR: $ROOTFS is still mounted, so $OUT_IMG may be incomplete. Unmount it and rebuild." >&2
+    exit 1
+fi
 
 echo "==> Golden image ready in $(fmt_duration "$SECONDS"): $OUT_IMG"
 if [ "$PROVISION" -eq 1 ]; then
