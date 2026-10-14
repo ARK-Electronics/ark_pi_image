@@ -36,12 +36,20 @@ gpio=27=op,dh
 # Drive USB Hub nRESET high (needed on Rev 1 only)
 gpio=26=op,dh
 
-# Cameras: CAM0 takes the cam0 parameter, CAM1 is the overlay default. Swap imx219 for your
-# sensor (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
-dtoverlay=imx219,cam0
-dtoverlay=imx219
+# Cameras: CAM0 takes the cam0 parameter, CAM1 is the overlay default. Compute modules don't
+# auto-detect cameras, so the overlay must match the sensor: imx708 = Camera Module 3,
+# imx219 = Camera Module 2, imx477 = HQ.
+dtoverlay=imx708,cam0
+dtoverlay=imx708
+
+# I2C1 on the Pi I2C1 JST-GH connector (GPIO2/3)
+dtparam=i2c_arm=on
 
 # Cooling fan on GPIO 19
 dtoverlay=gpio-fan,gpiopin=19
 EOF
 )
+
+# Kernel modules to autoload at boot (written to /etc/modules-load.d/<target>.conf by
+# configure_target.sh). dtparam=i2c_arm=on alone does not create /dev/i2c-1.
+TARGET_MODULES=(i2c-dev)
