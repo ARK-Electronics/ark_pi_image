@@ -36,7 +36,7 @@ dtparam=i2c_arm=on
 enable_uart=1
 dtoverlay=uart2,ctsrts
 dtoverlay=uart3,ctsrts
-# uart4 (GPIO12/13) won't come up from config.txt on CM5 — needs rc.local at boot
+# UART4 connector, TX/RX only (GPIO12/13)
 dtoverlay=uart4
 
 # PCIe FFC connector (off by default on CM5), at the certified Gen 2 default.
