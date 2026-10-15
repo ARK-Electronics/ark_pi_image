@@ -6,11 +6,13 @@
 # or staging/<target>-<codename>-ark-os.img when built with --provision.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=versions.env
-source "$SCRIPT_DIR/versions.env"
-DOWNLOADS="$SCRIPT_DIR/downloads"
-STAGING="$SCRIPT_DIR/staging"
+source "$REPO_DIR/versions.env"
+# shellcheck source=scripts/common.sh
+source "$REPO_DIR/scripts/common.sh"
+DOWNLOADS="$REPO_DIR/downloads"
+STAGING="$REPO_DIR/staging"
 export DOWNLOADS
 
 # Format the bash SECONDS builtin as e.g. "14m 32s" for the final summary.
@@ -33,10 +35,10 @@ fmt_duration() {
 write_image_manifest() {
     local describe commit branch built ark_os mavsdk provisioned
     built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        describe="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
-        commit="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
-        branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    if git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        describe="$(git -C "$REPO_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
+        commit="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+        branch="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
     else
         describe=unknown; commit=unknown; branch=unknown
     fi
@@ -64,47 +66,56 @@ write_image_manifest() {
 EOF
 }
 
-# Args: an optional target (default from versions.env) plus --provision, which adds the
-# ARK-OS payload; without it the image is stock Pi OS + target config.
+# Args: --target <name> (or interactive prompt / TARGET= env) plus --provision, which
+# adds the ARK-OS payload; without it the image is stock Pi OS + target config.
 PROVISION=0
 _target_arg=""
-for arg in "$@"; do
-    case "$arg" in
-        --provision) PROVISION=1 ;;
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --provision) PROVISION=1; shift ;;
+        --target)
+            [ -n "${2:-}" ] || { echo "ERROR: --target requires a name (see --help)." >&2; exit 1; }
+            _target_arg="$2"; shift 2
+            ;;
+        --target=*)
+            _target_arg="${1#--target=}"; shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [target] [--provision]"
-            echo "  target:      a name from targets/*.target (default from versions.env: $TARGET)"
-            echo "  --provision: also install the ARK-OS payload (off by default)"
+            echo "Usage: $0 --target <name> [--provision]"
+            echo "       $0 [--provision]                 # prompts for target"
+            echo
+            echo "  --target     carrier × module from targets/*.target"
+            echo "  --provision  also install the ARK-OS payload (off by default)"
+            echo
+            echo "Available targets:"
+            list_targets_with_desc | while IFS='|' read -r name desc; do
+                printf '  %-14s %s\n' "$name" "$desc"
+            done
+            echo
+            echo "Non-interactive: pass --target, or set TARGET= in the environment."
             exit 0
             ;;
-        -*) echo "ERROR: unknown option '$arg' (see '$0 --help')." >&2; exit 1 ;;
+        -*)
+            echo "ERROR: unknown option '$1' (see '$0 --help')." >&2
+            exit 1
+            ;;
         *)
-            [ -z "$_target_arg" ] || { echo "ERROR: multiple targets given ('$_target_arg', '$arg')." >&2; exit 1; }
-            _target_arg="$arg"
+            echo "ERROR: unexpected argument '$1' (targets are selected with --target)." >&2
+            echo "       See '$0 --help'." >&2
+            exit 1
             ;;
     esac
 done
-TARGET="${_target_arg:-$TARGET}"
-export TARGET
-TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
-[ -f "$TARGET_FILE" ] || {
-    echo "ERROR: unknown target '$TARGET' ($TARGET_FILE not found). Available targets:" >&2
-    for f in "$SCRIPT_DIR"/targets/*.target; do [ -e "$f" ] && echo "  $(basename "${f%.target}")" >&2; done
-    exit 1
-}
-# Refuse to build a stub target (carrier/module specifics not defined yet).
-if ( source "$TARGET_FILE" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
-    echo "ERROR: target '$TARGET' is a stub — its specifics aren't defined yet." >&2
-    echo "       Fill in $TARGET_FILE (see targets/justapi-cm5.target) and remove the TARGET_STUB line to build it." >&2
-    exit 1
-fi
+
+resolve_target "$_target_arg"
+
 # Tee all output (incl. configure_target.sh + provision.sh) to staging/build.log.txt.
 mkdir -p "$STAGING"
 exec > >(tee "$STAGING/build.log.txt") 2>&1
 
 echo "==> Target: $TARGET"
 
-sudo -v || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
+sudo true || { echo "ERROR: sudo is required to build a disk image." >&2; exit 1; }
 
 # Delegate download + verification to setup.sh when the cached base image is missing or
 # doesn't match the pinned sha256 (e.g. a cache left from a previous release).
@@ -120,7 +131,7 @@ if ! stock_image_ok; then
     else
         echo "==> Stock image not present — running setup.sh to fetch it"
     fi
-    "$SCRIPT_DIR/setup.sh"
+    "$REPO_DIR/scripts/setup.sh"
     stock_image_ok || { echo "ERROR: stock image still missing or mismatched after setup.sh ($STOCK_XZ)." >&2; exit 1; }
 fi
 
@@ -157,7 +168,16 @@ cleanup() {
     sudo umount "$ROOTFS/dev" 2>/dev/null || true
     sudo umount "$ROOTFS/sys" 2>/dev/null || true
     sudo umount "$ROOTFS/proc" 2>/dev/null || true
-    sudo umount "$ROOTFS" 2>/dev/null || true
+    # Daemons a package script started inside the chroot keep the rootfs busy, and a rootfs
+    # left mounted has not been flushed into the image.
+    # Only while it is a mountpoint: on a plain directory, fuser -m means the host filesystem.
+    if mountpoint -q "$ROOTFS"; then
+        sudo fuser -km "$ROOTFS" 2>/dev/null || true
+    fi
+    for _ in 1 2 3 4 5; do
+        mountpoint -q "$ROOTFS" || break
+        sudo umount "$ROOTFS" 2>/dev/null || sleep 1
+    done
     [ -n "$LOOP" ] && sudo losetup -d "$LOOP" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -194,7 +214,7 @@ sudo cp -f /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
 export ROOTFS_DIR="$ROOTFS"
 echo "==> Configuring target (arm64 chroot)"
-"$SCRIPT_DIR/configure_target.sh"
+"$REPO_DIR/scripts/configure_target.sh"
 if [ "$PROVISION" -eq 1 ]; then
     echo "==> Installing ARK-OS payload (arm64 chroot)"
     # Persist apt's downloaded dependency .debs across builds: bind-mount a host cache
@@ -204,7 +224,7 @@ if [ "$PROVISION" -eq 1 ]; then
     mkdir -p "$APT_CACHE"
     sudo mkdir -p "$ROOTFS/var/cache/apt/archives"
     sudo mount --bind "$APT_CACHE" "$ROOTFS/var/cache/apt/archives"
-    "$SCRIPT_DIR/provision.sh"
+    "$REPO_DIR/scripts/provision.sh"
 else
     echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"
 fi
@@ -216,6 +236,15 @@ echo "==> Unmounting"
 cleanup
 LOOP=""
 trap - EXIT
+if mountpoint -q "$ROOTFS"; then
+    echo "ERROR: $ROOTFS is still mounted, so $OUT_IMG may be incomplete. Unmount it and rebuild." >&2
+    exit 1
+fi
 
 echo "==> Golden image ready in $(fmt_duration "$SECONDS"): $OUT_IMG"
-echo "    Flash it with: ./flash.sh <device>   (e.g. /dev/sda or /dev/mmcblk0)"
+if [ "$PROVISION" -eq 1 ]; then
+    echo "    Flash it with: ./flash.sh --target $TARGET"
+else
+    # flash.sh prefers an -ark-os image, which may be an older build of this target.
+    echo "    Flash it with: IMG=$OUT_IMG ./flash.sh"
+fi

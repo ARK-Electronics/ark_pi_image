@@ -22,10 +22,11 @@ gpio=27=op,dh
 gpio=20=op,dh
 gpio=22=op,dh
 
-# Cameras: CAM0=J2 (MIPI0), CAM1=J1 (MIPI1). Swap imx219 for your sensor
-# (imx708 = Camera Module 3, imx477 = HQ); the overlay must match the connected sensor.
-dtoverlay=imx219,cam0
-dtoverlay=imx219,cam1
+# Cameras: the CAM1 connector (J2, MIPI0) takes the cam0 parameter; CAM2 (J1, MIPI1) is the
+# overlay default. Compute modules don't auto-detect cameras, so the overlay must match the
+# sensor: imx708 = Camera Module 3, imx219 = Camera Module 2, imx477 = HQ.
+dtoverlay=imx708,cam0
+dtoverlay=imx708
 
 # I2C: enable the ARM I2C (GPIO2/3) so the external INA226 power monitor is reachable.
 # The on-Pi suite scans 0x41 on bus 1; confirm the number with `i2cdetect -l` after boot.
@@ -63,3 +64,6 @@ EOF
 # configure_target.sh). i2c-dev exposes /dev/i2c-* so the INA226 power-monitor test can
 # reach the i2c_arm bus enabled above; dtparam=i2c_arm=on alone does not create the node.
 TARGET_MODULES=(i2c-dev)
+
+# systemd units from targets/units/ (installed and enabled by configure_target.sh).
+TARGET_UNITS=(ark-imx708-reset.service)

@@ -6,22 +6,22 @@
 set -euo pipefail
 
 : "${ROOTFS_DIR:?build.sh must export ROOTFS_DIR}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=versions.env
-source "$SCRIPT_DIR/versions.env"
+source "$REPO_DIR/versions.env"
 
 # Load the build target (carrier × compute module). build.sh validates and exports
 # TARGET; here we source its definition for the hostname + config.txt overlays to bake.
 TARGET="${TARGET:?build.sh must export TARGET}"
-TARGET_FILE="$SCRIPT_DIR/targets/$TARGET.target"
+TARGET_FILE="$REPO_DIR/targets/$TARGET.target"
 [ -f "$TARGET_FILE" ] || { echo "ERROR: unknown target '$TARGET' ($TARGET_FILE not found)." >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$TARGET_FILE"
-[ -z "${TARGET_STUB:-}" ] || { echo "ERROR: target '$TARGET' is a stub — populate $TARGET_FILE before building." >&2; exit 1; }
 : "${TARGET_HOSTNAME:?target $TARGET must set TARGET_HOSTNAME}"
 CONFIG_TXT_APPEND="${CONFIG_TXT_APPEND:-}"
 declare -p CONFIG_TXT_DISABLE >/dev/null 2>&1 || CONFIG_TXT_DISABLE=()
 declare -p TARGET_MODULES >/dev/null 2>&1 || TARGET_MODULES=()
+declare -p TARGET_UNITS >/dev/null 2>&1 || TARGET_UNITS=()
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
@@ -80,6 +80,13 @@ if ((${#TARGET_MODULES[@]})); then
         | sudo tee "$ROOTFS_DIR/etc/modules-load.d/${TARGET}.conf" >/dev/null
     echo "==> Autoload modules: ${TARGET_MODULES[*]}"
 fi
+
+# Carrier-specific systemd units, from targets/units/, enabled at boot.
+for unit in "${TARGET_UNITS[@]}"; do
+    sudo install -m 644 "$REPO_DIR/targets/units/$unit" "$ROOTFS_DIR/etc/systemd/system/$unit"
+    in_chroot systemctl enable "$unit"
+    echo "==> Installed and enabled $unit"
+done
 
 # Enable SSH; fall back to the boot-partition flag if systemctl can't run in the chroot.
 if [ "${ENABLE_SSH:-0}" = "1" ]; then

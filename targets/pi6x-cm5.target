@@ -1,0 +1,54 @@
+# ARK Pi6X Flow carrier + Raspberry Pi Compute Module 5.
+#
+# The carrier is wired for the CM4. On the CM5 the same pins come up under other
+# names (Pi6X Flow Rev 2.0 schematic, CM5 datasheet B.1.2):
+#   GPIO4-7, the external UART connector, is UART2 (uart3 on the CM4).
+#   GPIO8-11, Telem2 to the onboard ARKV6X, is UART3, /dev/ttyAMA3 (uart4 on the CM4).
+#   The CM4's CAM0 pins carry the CM5's USB 3.0 port 0, so only the CAM1 connector
+#   works, and it is the CM5's MIPI0 (the cam0 parameter).
+# ARK-OS's dds-agent still defaults to /dev/ttyAMA4; set it on the Services page.
+#
+# Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
+# CONFIG_TXT_DISABLE (stock directives to comment out), CONFIG_TXT_APPEND (block
+# appended verbatim under an ARK-OS marker).
+
+TARGET_DESC="ARK Pi6X Flow (onboard ARKV6X) + CM5"
+TARGET_HOSTNAME="pi6x"
+
+CONFIG_TXT_DISABLE=(
+    "camera_auto_detect=1"
+    "display_auto_detect=1"
+)
+
+CONFIG_TXT_APPEND=$(cat <<'EOF'
+# UARTs: debug console, external UART, Telem2 to the onboard ARKV6X (hardware CTS/RTS)
+enable_uart=1
+# General-purpose external UART
+dtoverlay=uart2,ctsrts
+# Telem2 to the flight controller
+dtoverlay=uart3,ctsrts
+
+# Carrier GPIO line initial states
+# Drive FMU_RST_REQ low
+gpio=25=op,dl
+# Drive USB_OTG_FS_VBUS high to enable FC USB
+gpio=27=op,dh
+# Drive USB Hub nRESET high (needed on Rev 1 only)
+gpio=26=op,dh
+
+# Camera on the CAM1 connector, which is cam0 on the CM5. Compute modules don't auto-detect
+# cameras, so the overlay must match the sensor: imx708 = Camera Module 3, imx219 = Camera
+# Module 2, imx477 = HQ.
+dtoverlay=imx708,cam0
+
+# I2C1 on the Pi I2C1 JST-GH connector (GPIO2/3)
+dtparam=i2c_arm=on
+
+# Cooling fan on GPIO 19
+dtoverlay=gpio-fan,gpiopin=19
+EOF
+)
+
+# Kernel modules to autoload at boot (written to /etc/modules-load.d/<target>.conf by
+# configure_target.sh). dtparam=i2c_arm=on alone does not create /dev/i2c-1.
+TARGET_MODULES=(i2c-dev)

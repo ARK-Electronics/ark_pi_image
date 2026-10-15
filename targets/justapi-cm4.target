@@ -1,0 +1,51 @@
+# ARK "Just A Pi" carrier + Raspberry Pi Compute Module 4.
+#
+# The carrier is wired for the CM5; on the CM4 its connectors come up under the CM4's
+# names (Just A Pi Rev 2.0 schematic):
+#   UART2 connector (GPIO4-7) is uart3, UART3 connector (GPIO8-11) is uart4,
+#   UART4 connector (GPIO12-13) is uart5.
+#   The CAM1 connector is the CM4's CAM1 (the overlay default); CAM2, USB-C, PCIe and
+#   the fan header have no CM4 equivalent.
+#
+# Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
+# CONFIG_TXT_DISABLE (stock directives to comment out), CONFIG_TXT_APPEND (block
+# appended verbatim under an ARK-OS marker).
+
+TARGET_DESC="ARK Just-A-Pi carrier + CM4"
+TARGET_HOSTNAME="just-a-pi"
+
+CONFIG_TXT_DISABLE=(
+    "camera_auto_detect=1"
+    "display_auto_detect=1"
+)
+
+CONFIG_TXT_APPEND=$(cat <<'EOF'
+# Power/enable rails: KSZ8794 1.2V, release switch from reset, CSI 3.3V
+gpio=27=op,dh
+gpio=20=op,dh
+gpio=22=op,dh
+
+# Camera on the CAM1 connector. Compute modules don't auto-detect cameras, so the overlay
+# must match the sensor: imx708 = Camera Module 3, imx219 = Camera Module 2, imx477 = HQ.
+dtoverlay=imx708
+
+# I2C: enable the ARM I2C (GPIO2/3) so the external INA226 power monitor is reachable.
+dtparam=i2c_arm=on
+
+# UARTs: 0=debug console (J6, GPIO14/15); UART2, UART3 and UART4 connectors
+enable_uart=1
+dtoverlay=uart3,ctsrts
+dtoverlay=uart4,ctsrts
+dtoverlay=uart5
+
+# USB2 host-port VBUS — powers downstream devices
+gpio=24=op,dh
+
+# Power LED on by default
+dtparam=pwr_led_trigger=default-on
+EOF
+)
+
+# Kernel modules to autoload at boot (written to /etc/modules-load.d/<target>.conf by
+# configure_target.sh). dtparam=i2c_arm=on alone does not create /dev/i2c-1.
+TARGET_MODULES=(i2c-dev)

@@ -1,70 +1,66 @@
 # ark_pi_image
 
-Builds a flashable **ARK-OS golden image** for the [ARK Just A Pi](https://docs.arkelectron.com/products/embedded-computers/ark-just-a-pi) carrier with a Raspberry Pi **Compute Module 5**. The output is a turnkey SD/eMMC image: flash it, plug the CM5 into the carrier, power on — carrier hardware configured and ARK-OS already installed. No Raspberry Pi Imager, no manual `config.txt` edits.
+Builds Raspberry Pi OS images for ARK's Compute Module carriers, with the carrier's `config.txt` and [ARK-OS](https://github.com/ARK-Electronics/ARK-OS) baked in. Released images are on [downloads.arkelectron.com/pi](https://downloads.arkelectron.com/pi/).
 
-This automates the manual [flashing guide](https://docs.arkelectron.com/products/embedded-computers/ark-just-a-pi/flashing-guide) once, at build time.
+| Carrier | Designed for | Also works, with limitations | Hostname |
+|---|---|---|---|
+| [ARK Pi6X Flow](https://docs.arkelectron.com/products/flight-controller/ark-pi6x-flow) | `pi6x-cm4` | `pi6x-cm5` | `pi6x.local` |
+| [ARK Just A Pi](https://docs.arkelectron.com/products/embedded-computers/ark-just-a-pi) | `justapi-cm5` | `justapi-cm4` | `just-a-pi.local` |
 
-## Build & flash
+## Build and flash
 
-Linux host with `sudo`. x86_64 works (the arm64 chroot runs under qemu — slower); a native arm64 host or a Pi is faster. Needs ~10 GB free.
-
-```bash
-./build.sh --provision        # build the default justapi-cm5 image with ARK-OS
-./flash.sh /dev/sdX           # write it to the SD card
-```
-
-- `build.sh` installs host tools and downloads the base image on first run (≈550 MB), then builds in an arm64 chroot. Expect 20–40 min on the first run, faster after: the base image, the debs, and the apt dependency cache (`downloads/apt-cache/`) are reused, so unchanged rebuilds skip the downloads. Output: `staging/justapi-cm5-trixie-ark-os.img`.
-- `flash.sh` with no device lists removable candidates; re-run with the device. It refuses the host's system disk and re-prompts for the device path before writing.
-
-Each step tees its full output to `staging/{setup,build,flash}.log.txt` for post-mortem.
-
-Insert the card into the Just A Pi with the CM5 installed and power on. It comes up headless:
+Needs a Linux host with `sudo` and ~10 GB free.
 
 ```bash
-ssh pi@just-a-pi.local        # password: pi
+./build.sh --target pi6x-cm4 --provision   # staging/pi6x-cm4-trixie-ark-os.img
+./flash.sh --target pi6x-cm4               # finds the SD card, asks y/N
 ```
 
-> **CM5 with onboard eMMC** has no SD slot — flash over USB instead. Short the `BOOT` jumper (next to UART4), connect USB-C to the host, run [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc) so the eMMC appears as `/dev/sdX`, `./flash.sh /dev/sdX`, then remove the jumper and boot.
+- Without `--target`, both prompt with a list of targets.
+- The first build downloads the base image (~550 MB); later builds take about 5 minutes.
+- `flash.sh` refuses partitions and any disk behind the host's system mounts or swap. To pick the device yourself: `./flash.sh --target pi6x-cm4 /dev/sdX`.
+- Without `--provision`, the image has the carrier config but no ARK-OS.
+- Logs go to `staging/{setup,build,flash}.log.txt`.
 
-> **Before shipping real units, change the baked `pi`/`pi` password** in `versions.env` (it's stored identically on every card). For a production line, prefer Pi OS's `userconf.txt` first-boot mechanism.
+Boot the carrier and log in with `ssh pi@<hostname>`, password `raspberry`.
 
----
+## eMMC
 
-## Targets
+A compute module with eMMC is flashed over USB. Put the carrier in boot mode, run [`rpiboot`](https://www.raspberrypi.com/documentation/computers/compute-module.html#flashing-the-compute-module-emmc) to expose the eMMC as a drive, then `./flash.sh --target <target> /dev/sdX`.
 
-A *target* (`targets/*.target`) is a carrier × compute-module pair. It sets the hostname and the `config.txt` overlays baked into the image. Select one with `./build.sh <target>` or `TARGET=` in `versions.env`; output is `staging/<target>-<codename>[-ark-os].img`.
-
-| Target | Carrier + module | Status |
-|---|---|---|
-| `justapi-cm5` *(default)* | Just A Pi + CM5 | supported |
-| `pi6x-cm4` | Pi6X Flow + CM4 | stub — config transcribed from docs, untested; gated off |
-
-`pi6x-cm4` refuses to build until validated: remove its `TARGET_STUB=1` line. Add a target by copying an existing file and setting `TARGET_HOSTNAME`, `CONFIG_TXT_DISABLE`, and `CONFIG_TXT_APPEND`.
+- **Pi6X:** short the `BOOT` header next to the micro USB and connect the micro USB. Remove the jumper afterwards.
+- **Just A Pi:** hold `BOOT` while powering on and connect the USB JST-GH port.
 
 ## What's in the image
 
-Pinned in `versions.env`:
+Raspberry Pi OS Lite (64-bit, Trixie) and ARK-OS, at the versions pinned in `versions.env`. `/etc/ark-os-image.json` records what built the image.
 
-- **Base:** Raspberry Pi OS Lite arm64, **Trixie (Debian 13)** — URL + sha256. One release at a time; for Bookworm, check out an older tag.
-- **ARK-OS:** `ark-os-pi-trixie` (`ARK_OS_VERSION`), built against Debian 13 / python3.13 to match the base. Installed only with `--provision`. The deb's `preinst` enforces the codename match, and its services run as user `pi`.
-- **MAVSDK:** bundled inside the ark-os deb under `/usr/lib/ark-os/mavsdk` (since [ARK-Electronics/ARK-OS#75](https://github.com/ARK-Electronics/ARK-OS/pull/75)) — nothing to install or pin here, and the image carries no system-wide MAVSDK, so installing your own never touches ARK-OS. `provision.sh` asserts the installed deb actually ships the bundled library.
+The default camera is the Raspberry Pi Camera Module 3 (IMX708). For another camera, change the `dtoverlay=imx708` lines in `/boot/firmware/config.txt` (`imx219` = Camera Module 2, `imx477` = HQ).
 
-To move to a newer Pi OS release, bump the base URL/sha256 + `PIOS_RELEASE` together and rebuild the ARK-OS deb for that release.
+### Carrier notes
 
-Every image carries `/etc/ark-os-image.json` recording what built it: the `ark_pi_image` commit (`git describe`, with a `-dirty` suffix if built from uncommitted changes), base-image sha256, target, build time, and the installed ARK-OS version plus the MAVSDK it bundles.
+- **Just A Pi, CAM2:** the carrier ties that connector's camera power enable high, so a Camera Module 3 there misses its power-on reset. `ark-imx708-reset.service` resets it over I2C at boot.
+- **Pi6X with a CM5:** `dds-agent` defaults to `/dev/ttyAMA4`; set it to `/dev/ttyAMA3` on ARK-OS's Services page.
 
-## Without `--provision`
+## Targets
 
-`./build.sh` alone produces a stock Pi OS image with only the carrier config baked (hostname, `config.txt`, the `pi` user, SSH) — no ARK-OS. Output drops the `-ark-os` suffix.
+A target is a carrier × compute module, `targets/<name>.target`:
 
-## Dev mode (unreleased ARK-OS)
+| Key | |
+|---|---|
+| `TARGET_HOSTNAME` | Required |
+| `TARGET_DESC` | Shown in the target picker |
+| `CONFIG_TXT_DISABLE` | Stock `config.txt` lines to comment out |
+| `CONFIG_TXT_APPEND` | Block appended after `[all]` |
+| `TARGET_MODULES` | Kernel modules to load at boot |
+| `TARGET_UNITS` | systemd units from `targets/units/` to install and enable |
 
-ARK-OS CI artifacts are versioned `0.0.0-<sha8>` and never published as releases. To build against one, drop the `ark-os-pi-trixie_*_arm64.deb` into `downloads/` and set `ARK_OS_VERSION=""`; the build installs the newest matching deb it finds there.
+## Releases
 
-## First-boot finalization
+Each carrier has its own tag: `pi6x-v<major>.<minor>.<patch>` or `just-a-pi-v<major>.<minor>.<patch>`.
 
-The image is only chrooted, never booted, so per-device steps run on the device's first boot: Pi OS regenerates SSH host keys and `machine-id` and expands root to fill the card, and ARK-OS's `ark-os-firstboot` oneshot (enabled offline during the chroot install) sets up the default hotspot, flight-review DB, and Wi-Fi unblock once.
+1. Pushing the tag runs **Release**, which builds every `targets/<carrier>-*.target` (`just-a-pi` builds `justapi-*`) and keeps the compressed images as run artifacts.
+2. Bench-test those files: `gh run download <run-id>`.
+3. Run **Publish to downloads.arkelectron.com** with the tag. It uploads to `downloads.arkelectron.com/pi/<carrier>/<version>/` and makes that version `latest/`.
 
-## License
-
-MIT — see [LICENSE](LICENSE). Flashed images bundle ARK-OS and MAVSDK, which carry their own licenses.
+Release can also run by hand on a branch to build test images; those runs are never published.
