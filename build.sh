@@ -6,13 +6,13 @@
 # or staging/<target>-<codename>-ark-os.img when built with --provision.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=versions.env
-source "$SCRIPT_DIR/versions.env"
-# shellcheck source=common.sh
-source "$SCRIPT_DIR/common.sh"
-DOWNLOADS="$SCRIPT_DIR/downloads"
-STAGING="$SCRIPT_DIR/staging"
+source "$REPO_DIR/versions.env"
+# shellcheck source=scripts/common.sh
+source "$REPO_DIR/scripts/common.sh"
+DOWNLOADS="$REPO_DIR/downloads"
+STAGING="$REPO_DIR/staging"
 export DOWNLOADS
 
 # Format the bash SECONDS builtin as e.g. "14m 32s" for the final summary.
@@ -35,10 +35,10 @@ fmt_duration() {
 write_image_manifest() {
     local describe commit branch built ark_os mavsdk provisioned
     built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        describe="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
-        commit="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
-        branch="$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    if git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        describe="$(git -C "$REPO_DIR" describe --tags --always --dirty 2>/dev/null || echo unknown)"
+        commit="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+        branch="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
     else
         describe=unknown; commit=unknown; branch=unknown
     fi
@@ -131,7 +131,7 @@ if ! stock_image_ok; then
     else
         echo "==> Stock image not present — running setup.sh to fetch it"
     fi
-    "$SCRIPT_DIR/setup.sh"
+    "$REPO_DIR/scripts/setup.sh"
     stock_image_ok || { echo "ERROR: stock image still missing or mismatched after setup.sh ($STOCK_XZ)." >&2; exit 1; }
 fi
 
@@ -214,7 +214,7 @@ sudo cp -f /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
 export ROOTFS_DIR="$ROOTFS"
 echo "==> Configuring target (arm64 chroot)"
-"$SCRIPT_DIR/configure_target.sh"
+"$REPO_DIR/scripts/configure_target.sh"
 if [ "$PROVISION" -eq 1 ]; then
     echo "==> Installing ARK-OS payload (arm64 chroot)"
     # Persist apt's downloaded dependency .debs across builds: bind-mount a host cache
@@ -224,7 +224,7 @@ if [ "$PROVISION" -eq 1 ]; then
     mkdir -p "$APT_CACHE"
     sudo mkdir -p "$ROOTFS/var/cache/apt/archives"
     sudo mount --bind "$APT_CACHE" "$ROOTFS/var/cache/apt/archives"
-    "$SCRIPT_DIR/provision.sh"
+    "$REPO_DIR/scripts/provision.sh"
 else
     echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"
 fi

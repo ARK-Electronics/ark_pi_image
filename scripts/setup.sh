@@ -3,15 +3,15 @@
 # Run once per workstation, and again whenever versions.env's base image changes.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=versions.env
-source "$SCRIPT_DIR/versions.env"
-DOWNLOADS="$SCRIPT_DIR/downloads"
+source "$REPO_DIR/versions.env"
+DOWNLOADS="$REPO_DIR/downloads"
 mkdir -p "$DOWNLOADS"
 
 # Tee all output to staging/setup.log.txt so a failed run can be inspected afterward.
-mkdir -p "$SCRIPT_DIR/staging"
-exec > >(tee "$SCRIPT_DIR/staging/setup.log.txt") 2>&1
+mkdir -p "$REPO_DIR/staging"
+exec > >(tee "$REPO_DIR/staging/setup.log.txt") 2>&1
 
 [ "$(uname -s)" = "Linux" ] || { echo "ERROR: this builds Linux disk images; run it on Linux." >&2; exit 1; }
 

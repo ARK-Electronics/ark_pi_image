@@ -7,10 +7,10 @@
 set -euo pipefail
 
 : "${ROOTFS_DIR:?build.sh must export ROOTFS_DIR}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=versions.env
-source "$SCRIPT_DIR/versions.env"
-DOWNLOADS="${DOWNLOADS:-$SCRIPT_DIR/downloads}"
+source "$REPO_DIR/versions.env"
+DOWNLOADS="${DOWNLOADS:-$REPO_DIR/downloads}"
 
 # The codename is part of the package name and its preinst refuses a release mismatch,
 # so this must track the base image (→ ark-os-pi-trixie).

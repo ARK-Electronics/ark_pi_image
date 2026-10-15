@@ -5,12 +5,12 @@
 #   Confirms with y/N before writing — never requires re-typing the path.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=versions.env
-source "$SCRIPT_DIR/versions.env"
-# shellcheck source=common.sh
-source "$SCRIPT_DIR/common.sh"
-STAGING="$SCRIPT_DIR/staging"
+source "$REPO_DIR/versions.env"
+# shellcheck source=scripts/common.sh
+source "$REPO_DIR/scripts/common.sh"
+STAGING="$REPO_DIR/staging"
 
 _target_arg=""
 _device_arg=""

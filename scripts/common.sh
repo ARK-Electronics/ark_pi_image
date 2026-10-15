@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# Shared helpers for build.sh / flash.sh. Sourced after versions.env; expects SCRIPT_DIR.
+# Shared helpers for build.sh / flash.sh. Sourced after versions.env; expects REPO_DIR.
 
 # Print every known target name (one per line), sorted.
 list_targets() {
     local f
-    for f in "$SCRIPT_DIR"/targets/*.target; do
+    for f in "$REPO_DIR"/targets/*.target; do
         [ -e "$f" ] || continue
         basename "${f%.target}"
     done | sort
@@ -13,27 +13,22 @@ list_targets() {
 # Print "name|description" for each target (description from TARGET_DESC if set).
 list_targets_with_desc() {
     local f name desc
-    for f in "$SCRIPT_DIR"/targets/*.target; do
+    for f in "$REPO_DIR"/targets/*.target; do
         [ -e "$f" ] || continue
         name="$(basename "${f%.target}")"
         # shellcheck source=/dev/null
-        desc="$(TARGET_STUB=; TARGET_DESC=; source "$f" >/dev/null 2>&1; echo "${TARGET_DESC:-$name}")"
+        desc="$(TARGET_DESC=; source "$f" >/dev/null 2>&1; echo "${TARGET_DESC:-$name}")"
         printf '%s|%s\n' "$name" "$desc"
     done | sort
 }
 
-# Validate that $1 is a known, non-stub target file. Exits on failure.
+# Validate that $1 is a known target file. Exits on failure.
 validate_target() {
     local name="$1"
-    local file="$SCRIPT_DIR/targets/${name}.target"
+    local file="$REPO_DIR/targets/${name}.target"
     if [ ! -f "$file" ]; then
         echo "ERROR: unknown target '$name' ($file not found). Available targets:" >&2
         list_targets | sed 's/^/  /' >&2
-        exit 1
-    fi
-    if ( source "$file" >/dev/null 2>&1; [ -n "${TARGET_STUB:-}" ] ); then
-        echo "ERROR: target '$name' is a stub — its specifics aren't defined yet." >&2
-        echo "       Fill in $file and remove the TARGET_STUB line to use it." >&2
         exit 1
     fi
 }
