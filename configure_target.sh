@@ -22,6 +22,7 @@ source "$TARGET_FILE"
 CONFIG_TXT_APPEND="${CONFIG_TXT_APPEND:-}"
 declare -p CONFIG_TXT_DISABLE >/dev/null 2>&1 || CONFIG_TXT_DISABLE=()
 declare -p TARGET_MODULES >/dev/null 2>&1 || TARGET_MODULES=()
+declare -p TARGET_UNITS >/dev/null 2>&1 || TARGET_UNITS=()
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
@@ -80,6 +81,13 @@ if ((${#TARGET_MODULES[@]})); then
         | sudo tee "$ROOTFS_DIR/etc/modules-load.d/${TARGET}.conf" >/dev/null
     echo "==> Autoload modules: ${TARGET_MODULES[*]}"
 fi
+
+# Carrier-specific systemd units, from targets/units/, enabled at boot.
+for unit in "${TARGET_UNITS[@]}"; do
+    sudo install -m 644 "$SCRIPT_DIR/targets/units/$unit" "$ROOTFS_DIR/etc/systemd/system/$unit"
+    in_chroot systemctl enable "$unit"
+    echo "==> Installed and enabled $unit"
+done
 
 # Enable SSH; fall back to the boot-partition flag if systemctl can't run in the chroot.
 if [ "${ENABLE_SSH:-0}" = "1" ]; then

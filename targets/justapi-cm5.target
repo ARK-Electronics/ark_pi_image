@@ -64,3 +64,6 @@ EOF
 # configure_target.sh). i2c-dev exposes /dev/i2c-* so the INA226 power-monitor test can
 # reach the i2c_arm bus enabled above; dtparam=i2c_arm=on alone does not create the node.
 TARGET_MODULES=(i2c-dev)
+
+# systemd units from targets/units/ (installed and enabled by configure_target.sh).
+TARGET_UNITS=(ark-imx708-reset.service)
