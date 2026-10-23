@@ -38,6 +38,9 @@ dtoverlay=uart2,ctsrts
 dtoverlay=uart3,ctsrts
 # UART4 connector, TX/RX only (GPIO12/13)
 dtoverlay=uart4
+# GNSS PPS input on the UART4 connector's pin 4 (GPIO18) as /dev/pps0, pulled down so it
+# stays low with nothing wired. For PWM2 on that pin, replace with dtoverlay=pwm,pin=18,func=2
+dtoverlay=pps-gpio,gpiopin=18,pull=down
 
 # PCIe FFC connector (off by default on CM5), at the certified Gen 2 default.
 # Uncomment for Gen 3 (8 GT/s) only if the cable + endpoint are clean at Gen 3.

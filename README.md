@@ -40,6 +40,7 @@ The default camera is the Raspberry Pi Camera Module 3 (IMX708). For another cam
 ### Carrier notes
 
 - **Just A Pi, CAM2:** the carrier ties that connector's camera power enable high, so a Camera Module 3 there misses its power-on reset. `ark-imx708-reset.service` resets it over I2C at boot.
+- **Just A Pi, UART4 connector pin 4:** GPIO18 is a GNSS PPS input, `/dev/pps0`. For PWM2 there, replace `dtoverlay=pps-gpio,gpiopin=18,pull=down` in `config.txt` with `dtoverlay=pwm,pin=18,func=2`.
 - **Pi6X with a CM5:** `dds-agent` defaults to `/dev/ttyAMA4`; set it to `/dev/ttyAMA3` on ARK-OS's Services page.
 
 ## Targets
