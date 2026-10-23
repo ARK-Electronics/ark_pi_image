@@ -37,6 +37,9 @@ enable_uart=1
 dtoverlay=uart3,ctsrts
 dtoverlay=uart4,ctsrts
 dtoverlay=uart5
+# GNSS PPS input on the UART4 connector's pin 4 (GPIO18) as /dev/pps0, pulled down so it
+# stays low with nothing wired. For PWM2 on that pin, replace with dtoverlay=pwm,pin=18,func=2
+dtoverlay=pps-gpio,gpiopin=18,pull=down
 
 # USB2 host-port VBUS — powers downstream devices
 gpio=24=op,dh
