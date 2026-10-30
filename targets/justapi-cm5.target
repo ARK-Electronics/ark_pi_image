@@ -4,7 +4,8 @@
 # their own lines — config.txt doesn't support inline comments after a directive):
 #   docs.arkelectron.com/products/embedded-computers/ark-just-a-pi/flashing-guide/after-flashing-before-installing
 #
-# Sourced by configure_target.sh. Keys: TARGET_DESC, TARGET_HOSTNAME (required),
+# Sourced by configure_target.sh, and by install_drivers.sh for TARGET_DRIVERS.
+# Keys: TARGET_DESC, TARGET_HOSTNAME (required),
 # CONFIG_TXT_DISABLE (stock directives to comment out), CONFIG_TXT_APPEND (block
 # appended verbatim under an ARK-OS marker).
 
@@ -27,6 +28,12 @@ gpio=22=op,dh
 # sensor: imx708 = Camera Module 3, imx219 = Camera Module 2, imx477 = HQ.
 dtoverlay=imx708,cam0
 dtoverlay=imx708
+
+# ARK Hadron Adapter on CAM1: swap imx708,cam0 above for ov64b40,cam0, take CTS/RTS off
+# uart2 below, and uncomment the i2c-gpio line, which puts the adapter's IMU I2C (J3,
+# straight cable to the UART2 connector) on /dev/i2c-7: SCL on pin 4, SDA on pin 5.
+#dtoverlay=ov64b40,cam0
+#dtoverlay=i2c-gpio,i2c_gpio_sda=7,i2c_gpio_scl=6,bus=7
 
 # I2C: enable the ARM I2C (GPIO2/3) so the external INA226 power monitor is reachable.
 # The on-Pi suite scans 0x41 on bus 1; confirm the number with `i2cdetect -l` after boot.
@@ -67,3 +74,7 @@ TARGET_MODULES=(i2c-dev)
 
 # systemd units from targets/units/ (installed and enabled by configure_target.sh).
 TARGET_UNITS=(ark-imx708-reset.service)
+
+# Out-of-tree drivers from drivers/, built with DKMS and their overlays installed by
+# install_drivers.sh. ov64b40 is the FLIR Hadron's visible camera (ARK Hadron Adapter).
+TARGET_DRIVERS=(ov64b40)
