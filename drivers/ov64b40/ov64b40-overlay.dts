@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// FLIR Hadron 640R visible camera (OmniVision OV64B40) through the ARK Hadron Adapter.
+//
+// The Hadron clocks and powers the sensor itself, so the clock below only states its
+// 24 MHz rate. Its reset is shared with the Boson and is the connector's pin 17, the
+// camera enable the sensor takes as its vdd supply. With the cam0 parameter that pin
+// is the CM5's CAM_GPIO0, and its regulator is held on for good, so no camera driver
+// ever resets the Hadron. CAM2's pin 17 is tied high on the Just A Pi.
+/dts-v1/;
+/plugin/;
+
+/{
+	compatible = "brcm,bcm2712";
+
+	i2c_frag: fragment@0 {
+		target = <&i2c_csi_dsi>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			cam_node: ov64b40@36 {
+				compatible = "ovti,ov64b40";
+				reg = <0x36>;
+				status = "okay";
+
+				clocks = <&cam1_clk>;
+				clock-names = "xclk";
+
+				vdd-supply = <&cam1_reg>;
+
+				rotation = <0>;
+				orientation = <2>;
+
+				port {
+					cam_endpoint: endpoint {
+						bus-type = <4>;
+						clock-lanes = <0>;
+						data-lanes = <1 2>;
+						link-frequencies =
+							/bits/ 64 <399600000>;
+						remote-endpoint = <&csi_ep>;
+					};
+				};
+			};
+		};
+	};
+
+	csi_frag: fragment@1 {
+		target = <&csi1>;
+		csi: __overlay__ {
+			status = "okay";
+
+			port {
+				csi_ep: endpoint {
+					remote-endpoint = <&cam_endpoint>;
+					clock-lanes = <0>;
+					data-lanes = <1 2>;
+				};
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&i2c0if>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	clk_frag: fragment@3 {
+		target = <&cam1_clk>;
+		__overlay__ {
+			clock-frequency = <24000000>;
+			status = "okay";
+		};
+	};
+
+	fragment@4 {
+		target = <&i2c0mux>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@5 {
+		target = <&cam0_reg>;
+		__dormant__ {
+			regulator-always-on;
+		};
+	};
+
+	__overrides__ {
+		rotation = <&cam_node>,"rotation:0";
+		orientation = <&cam_node>,"orientation:0";
+		cam0 = <&i2c_frag>, "target:0=",<&i2c_csi_dsi0>,
+		       <&csi_frag>, "target:0=",<&csi0>,
+		       <&clk_frag>, "target:0=",<&cam0_clk>,
+		       <&cam_node>, "clocks:0=",<&cam0_clk>,
+		       <&cam_node>, "vdd-supply:0=",<&cam0_reg>,
+		       <0>, "+5";
+	};
+};
