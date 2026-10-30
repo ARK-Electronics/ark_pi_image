@@ -65,7 +65,8 @@ The `justapi-cm5` image carries the driver (`ov64b40`, built with DKMS) and over
 - **Thermal camera:** the Boson is a UVC camera ("FLIR Video") at 30 fps.
 - **IMU:** the adapter's ICM-45686 is at `0x68` on `/dev/i2c-7`; the Hadron's own IMU answers at `0x28`.
 - **Reset:** CAM1 pin 17 is the Hadron's reset, which its Boson shares. The overlay holds it released for good, so no camera driver powering down resets the Boson.
-- **Frame sync:** with R12 fitted, the IMU tags the Boson's sync pulses. Leave R11 off on the Just A Pi. It joins the Hadron's 1.8 V sync line to CAM1 pin 18 (GPIO35), which the CM5 pulls up to 3.3 V through 15 kΩ, so whenever the Boson isn't driving the line it sits above the Hadron's 2.1 V input limit. Reading the pulses on the Pi in spec would need a level translator.
+- **Frame sync:** with R12 fitted, the IMU tags the Boson's sync pulses. With R11 fitted, the pulses also reach CAM1 pin 18 (GPIO35), which the Pi only reads; apart from the CM5 holding it low during boot, nothing on the Pi drives it. CAM2 has no pin 18.
+- **R11 and the CM5's pull-up:** the CM5 pulls GPIO35 up to 3.3 V through 15 kΩ on the module, and no setting removes it. The Boson holds the sync line low at power-on and pulses it as sync master, so in normal use the pull-up only loads its output. The line rises above the Hadron's 2.1 V input limit only when nothing drives it: with the Boson as a sync slave, or with the Hadron unpowered while the CM5 is on. About 0.1 to 0.2 mA then flows into the Hadron's sync pin. Staying in spec in those cases would need a divider or level translator on the adapter.
 
 ## Targets
 
