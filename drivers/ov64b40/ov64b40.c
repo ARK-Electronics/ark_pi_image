@@ -47,10 +47,14 @@
 #define OV64B40_REG_CHIP_ID		CCI_REG24(0x300a)
 #define OV64B40_CHIP_ID			0x566442
 
-/* Coarse exposure in lines; the tables keep 32 lines of VTS margin. */
+/*
+ * Coarse exposure in lines; the tables keep 32 lines of VTS margin. The OV64B
+ * phone drivers keep exposure and VTS even, so both move in 2-line steps.
+ */
 #define OV64B40_REG_EXPOSURE		CCI_REG24(0x3500)
 #define OV64B40_EXPOSURE_MIN		16
 #define OV64B40_EXPOSURE_MARGIN		32
+#define OV64B40_LINE_STEP		2
 
 /* Linear analogue gain in Q8: 0x0100 is 1x, 0x0f80 is 15.5x. */
 #define OV64B40_REG_ANALOGUE_GAIN	CCI_REG16(0x3508)
@@ -61,7 +65,7 @@
 #define OV64B40_REG_VTS_HIGH		CCI_REG8(0x3840)
 #define OV64B40_REG_VTS			CCI_REG16(0x380e)
 #define OV64B40_VBLANK_MIN		128
-#define OV64B40_VTS_MAX			0xffffff
+#define OV64B40_VTS_MAX			0xfffffe
 
 #define OV64B40_REG_TEST_PATTERN	CCI_REG8(0x50c1)
 
@@ -310,8 +314,8 @@ static int ov64b40_set_format(struct v4l2_subdev *sd,
 		*v4l2_subdev_state_get_crop(state, 0) = mode->crop;
 
 		__v4l2_ctrl_modify_range(ov64b40->vblank, OV64B40_VBLANK_MIN,
-					 OV64B40_VTS_MAX - mode->height, 1,
-					 vblank_def);
+					 OV64B40_VTS_MAX - mode->height,
+					 OV64B40_LINE_STEP, vblank_def);
 		__v4l2_ctrl_s_ctrl(ov64b40->vblank, vblank_def);
 		__v4l2_ctrl_modify_range(ov64b40->hblank, hblank, hblank, 1,
 					 hblank);
@@ -389,9 +393,12 @@ static int ov64b40_set_ctrl(struct v4l2_ctrl *ctrl)
 			    - OV64B40_EXPOSURE_MARGIN;
 		int exp_val = min(ov64b40->exposure->cur.val, exp_max);
 
-		__v4l2_ctrl_modify_range(ov64b40->exposure,
-					 ov64b40->exposure->minimum,
-					 exp_max, 1, exp_val);
+		/* Shortening the exposure to fit writes it, so stop before VTS if that fails. */
+		ret = __v4l2_ctrl_modify_range(ov64b40->exposure,
+					       ov64b40->exposure->minimum,
+					       exp_max, OV64B40_LINE_STEP, exp_val);
+		if (ret)
+			return ret;
 	}
 
 	pm_status = pm_runtime_get_if_active(ov64b40->dev);
@@ -468,7 +475,8 @@ static int ov64b40_init_controls(struct ov64b40 *ov64b40)
 					      V4L2_CID_EXPOSURE,
 					      OV64B40_EXPOSURE_MIN,
 					      mode->vts - OV64B40_EXPOSURE_MARGIN,
-					      1, mode->vts / 2);
+					      OV64B40_LINE_STEP,
+					      (mode->vts / 2) & ~1);
 
 	ov64b40->hblank = v4l2_ctrl_new_std(hdlr, &ov64b40_ctrl_ops,
 					    V4L2_CID_HBLANK, hblank, hblank, 1,
@@ -478,7 +486,8 @@ static int ov64b40_init_controls(struct ov64b40 *ov64b40)
 
 	ov64b40->vblank = v4l2_ctrl_new_std(hdlr, &ov64b40_ctrl_ops,
 					    V4L2_CID_VBLANK, OV64B40_VBLANK_MIN,
-					    OV64B40_VTS_MAX - mode->height, 1,
+					    OV64B40_VTS_MAX - mode->height,
+					    OV64B40_LINE_STEP,
 					    mode->vts - mode->height);
 
 	v4l2_ctrl_new_std(hdlr, &ov64b40_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
