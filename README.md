@@ -48,6 +48,7 @@ The `justapi-cm5` image carries the driver (`ov64b40`, built with DKMS) and over
 
 - **Cabling:** the CSI ribbon goes to CAM1 (J2) and the USB to the USB 2.0 JST-GH. J3 goes to the UART2 connector with a straight 6-pin JST-GH cable, which puts the adapter's SCL and SDA on GPIO6 and GPIO7.
 - **`config.txt`:** in `/boot/firmware/config.txt`, change `dtoverlay=imx708,cam0` to `dtoverlay=ov64b40,cam0`, change `dtoverlay=uart2,ctsrts` to `dtoverlay=uart2`, and uncomment `dtoverlay=i2c-gpio,i2c_gpio_sda=7,i2c_gpio_scl=6,bus=7`. UART2 keeps TX and RX.
+- **CAM2 (J1):** the Hadron works there too. Keep `dtoverlay=imx708,cam0` and change `dtoverlay=imx708` to `dtoverlay=ov64b40`. The carrier ties CAM2's pin 17 high, so the Hadron's reset is always released. CAM2 has no pin 18, so the Pi can't read the sync pulses there.
 - **Visible camera:** 2304x1728 RAW10 (RGGB) at 20 fps on two lanes at 799.2 Mbps. The Pi 5's CSI-2 receiver takes at most 1.5 Gbps per lane, which rules out the Jetson driver's modes; this one comes from the Ingenic T40 SDK's table. libcamera doesn't support the sensor (no camera helper or tuning file), so `rpicam-*` and ARK-OS's RTSP server don't see it. Capture raw frames with V4L2; device numbers depend on probe order, so look them up by name:
 
   ```bash
@@ -65,7 +66,7 @@ The `justapi-cm5` image carries the driver (`ov64b40`, built with DKMS) and over
 - **Thermal camera:** the Boson is a UVC camera ("FLIR Video") at 30 fps.
 - **IMU:** the adapter's ICM-45686 is at `0x68` on `/dev/i2c-7`; the Hadron's own IMU answers at `0x28`.
 - **Reset:** CAM1 pin 17 is the Hadron's reset, which its Boson shares. The overlay holds it released for good, so no camera driver powering down resets the Boson.
-- **Frame sync:** with R12 fitted, the IMU tags the Boson's sync pulses. With R11 fitted, the pulses also reach CAM1 pin 18 (GPIO35), which the Pi only reads; apart from the CM5 holding it low during boot, nothing on the Pi drives it. CAM2 has no pin 18.
+- **Frame sync:** with R12 fitted, the IMU tags the Boson's sync pulses. With R11 fitted, the pulses also reach CAM1 pin 18 (GPIO35), which the Pi only reads; apart from the CM5 holding it low during boot, nothing on the Pi drives it.
 - **R11 and the CM5's pull-up:** the CM5 pulls GPIO35 up to 3.3 V through 15 kΩ on the module, and no setting removes it. The Boson holds the sync line low at power-on and pulses it as sync master, so in normal use the pull-up only loads its output. The line rises above the Hadron's 2.1 V input limit only when nothing drives it: with the Boson as a sync slave, or with the Hadron unpowered while the CM5 is on. About 0.1 to 0.2 mA then flows into the Hadron's sync pin. Staying in spec in those cases would need a divider or level translator on the adapter.
 
 ## Targets

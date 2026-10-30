@@ -32,6 +32,7 @@ dtoverlay=imx708
 # ARK Hadron Adapter on CAM1: swap imx708,cam0 above for ov64b40,cam0, take CTS/RTS off
 # uart2 below, and uncomment the i2c-gpio line, which puts the adapter's IMU I2C (J3,
 # straight cable to the UART2 connector) on /dev/i2c-7: SCL on pin 4, SDA on pin 5.
+# On CAM2 instead, keep imx708,cam0 and swap the plain imx708 line for ov64b40.
 #dtoverlay=ov64b40,cam0
 #dtoverlay=i2c-gpio,i2c_gpio_sda=7,i2c_gpio_scl=6,bus=7
 
