@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build a Raspberry Pi golden image: copy the stock image, grow its root partition,
 # loop-mount it, bind-mount the kernel filesystems, and bake the target's hardware
-# config in an arm64 chroot (configure_target.sh). With --provision it additionally
-# installs the ARK-OS payload (provision.sh). Produces staging/<target>-<codename>.img,
-# or staging/<target>-<codename>-ark-os.img when built with --provision.
+# config and drivers in an arm64 chroot (configure_target.sh, install_drivers.sh). With
+# --provision it additionally installs the ARK-OS payload (provision.sh). Produces
+# staging/<target>-<codename>.img, or staging/<target>-<codename>-ark-os.img when built
+# with --provision.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -109,7 +110,7 @@ done
 
 resolve_target "$_target_arg"
 
-# Tee all output (incl. configure_target.sh + provision.sh) to staging/build.log.txt.
+# Tee all output (incl. configure_target.sh, install_drivers.sh + provision.sh) to staging/build.log.txt.
 mkdir -p "$STAGING"
 exec > >(tee "$STAGING/build.log.txt") 2>&1
 
@@ -162,19 +163,19 @@ cleanup() {
         sudo rm -f "$ROOTFS/etc/resolv.conf"
         sudo mv "$ROOTFS/etc/resolv.conf.prov-bak" "$ROOTFS/etc/resolv.conf"
     fi
-    sudo umount "$ROOTFS/var/cache/apt/archives" 2>/dev/null || true
-    sudo umount "$ROOTFS/boot/firmware" 2>/dev/null || true
-    sudo umount "$ROOTFS/dev/pts" 2>/dev/null || true
-    sudo umount "$ROOTFS/dev" 2>/dev/null || true
-    sudo umount "$ROOTFS/sys" 2>/dev/null || true
-    sudo umount "$ROOTFS/proc" 2>/dev/null || true
     # Daemons a package script started inside the chroot keep the rootfs busy, and a rootfs
-    # left mounted has not been flushed into the image.
-    # Only while it is a mountpoint: on a plain directory, fuser -m means the host filesystem.
+    # left mounted has not been flushed into the image. Kill them before unmounting the
+    # bind mounts, which they hold too (DKMS leaves an orphaned `sleep 3` from its progress
+    # dots). Only while it is a mountpoint: on a plain directory, fuser -m means the host
+    # filesystem.
     if mountpoint -q "$ROOTFS"; then
         sudo fuser -km "$ROOTFS" 2>/dev/null || true
     fi
+    # Retry the whole sequence: a process killed just now can still hold a bind mount.
     for _ in 1 2 3 4 5; do
+        for mount in var/cache/apt/archives boot/firmware dev/pts dev sys proc; do
+            sudo umount "$ROOTFS/$mount" 2>/dev/null || true
+        done
         mountpoint -q "$ROOTFS" || break
         sudo umount "$ROOTFS" 2>/dev/null || sleep 1
     done
@@ -212,18 +213,21 @@ sudo mount --bind /dev/pts "$ROOTFS/dev/pts"
 sudo cp -a "$ROOTFS/etc/resolv.conf" "$ROOTFS/etc/resolv.conf.prov-bak" 2>/dev/null || true
 sudo cp -f /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
+# Persist apt's downloaded .debs across builds: bind-mount a host cache over the chroot's
+# archive dir so an unchanged rebuild reuses them instead of re-fetching the whole
+# dependency tree. cleanup() unmounts it; the image keeps none.
+APT_CACHE="$DOWNLOADS/apt-cache"
+mkdir -p "$APT_CACHE"
+sudo mkdir -p "$ROOTFS/var/cache/apt/archives"
+sudo mount --bind "$APT_CACHE" "$ROOTFS/var/cache/apt/archives"
+
 export ROOTFS_DIR="$ROOTFS"
 echo "==> Configuring target (arm64 chroot)"
 "$REPO_DIR/scripts/configure_target.sh"
+echo "==> Building target drivers (arm64 chroot)"
+"$REPO_DIR/scripts/install_drivers.sh"
 if [ "$PROVISION" -eq 1 ]; then
     echo "==> Installing ARK-OS payload (arm64 chroot)"
-    # Persist apt's downloaded dependency .debs across builds: bind-mount a host cache
-    # over the chroot's archive dir so an unchanged rebuild reuses them instead of
-    # re-fetching the whole dependency tree. cleanup() unmounts it; the image keeps none.
-    APT_CACHE="$DOWNLOADS/apt-cache"
-    mkdir -p "$APT_CACHE"
-    sudo mkdir -p "$ROOTFS/var/cache/apt/archives"
-    sudo mount --bind "$APT_CACHE" "$ROOTFS/var/cache/apt/archives"
     "$REPO_DIR/scripts/provision.sh"
 else
     echo "==> Skipping ARK-OS payload (no --provision; pass --provision to install it)"
