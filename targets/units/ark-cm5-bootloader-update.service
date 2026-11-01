@@ -1,0 +1,12 @@
+[Unit]
+Description=Update a CM5 bootloader too old for the Pi6X USB hub
+After=rpi-eeprom-update.service
+RequiresMountsFor=/boot/firmware
+Before=ark-os.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ark-cm5-bootloader-update
+
+[Install]
+WantedBy=multi-user.target
