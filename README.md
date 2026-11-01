@@ -41,7 +41,7 @@ The default camera is the Raspberry Pi Camera Module 3 (IMX708). For another cam
 
 - **Just A Pi, CAM2:** the carrier ties that connector's camera power enable high, so a Camera Module 3 there misses its power-on reset. `ark-imx708-reset.service` resets it over I2C at boot.
 - **Pi6X with a CM5:** `dds-agent` defaults to `/dev/ttyAMA4`; set it to `/dev/ttyAMA3` on ARK-OS's Services page.
-- **Pi6X with a CM5, bootloader:** a CM5 bootloader older than 2025-11-27 holds the carrier's USB hub in reset, and Raspberry Pi OS doesn't update it. `ark-cm5-bootloader-update.service` installs the image's default bootloader at boot, keeping the module's bootloader config, and reboots once.
+- **Pi6X with a CM5, bootloader:** with a CM5 bootloader older than 2025-11-27 the carrier's USB hub never enumerates, and Raspberry Pi OS doesn't update the bootloader. `ark-cm5-bootloader-update.service` installs the image's default bootloader at boot, keeping the module's bootloader config, and reboots once.
 
 ## Targets
 

@@ -53,6 +53,6 @@ EOF
 # configure_target.sh). dtparam=i2c_arm=on alone does not create /dev/i2c-1.
 TARGET_MODULES=(i2c-dev)
 
-# Bootloaders before 2025-11-27 hold the USB hub in reset; see the script.
+# With bootloaders before 2025-11-27 the USB hub never enumerates; see the script.
 TARGET_BIN=(ark-cm5-bootloader-update)
 TARGET_UNITS=(ark-cm5-bootloader-update.service)
