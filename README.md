@@ -62,7 +62,7 @@ A target is a carrier × compute module, `targets/<name>.target`:
 Each carrier has its own tag: `pi6x-v<major>.<minor>.<patch>` or `just-a-pi-v<major>.<minor>.<patch>`.
 
 1. Push the tag. **Release** builds every `targets/<carrier>-*.target` (`just-a-pi` builds `justapi-*`) and publishes the images as an unlisted draft at `downloads.arkelectron.com/dev/pi/<carrier>/<version>/`. A draft expires 90 days after upload.
-2. Bench-test the draft. In `ark-bench --debug`, write a card with the carrier's Fixture SD Card product and **Write latest DRAFT image** ticked, then pass the carrier's production test on it.
+2. Bench-test the draft. In `ark-bench --debug`, write a card with the carrier's Fixture SD Card product and **Write latest DRAFT image** ticked, then pass the carrier's production test on it. A release too simple to need the bench skips this step.
 3. Promote it: `gh workflow run promote.yml -f tag=<tag>`. **Promote** copies the draft byte for byte to `pi/<carrier>/<version>/` and makes that version `latest/`.
 
 Release can also run by hand on a branch to build test images. Those stay run artifacts and are never published.
