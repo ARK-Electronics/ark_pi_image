@@ -33,7 +33,10 @@ dtoverlay=imx708
 # uart2 below, and uncomment the i2c-gpio line, which puts the adapter's IMU I2C (J3,
 # straight cable to the UART2 connector) on /dev/i2c-7: SCL on pin 4, SDA on pin 5.
 # On CAM2 instead, keep imx708,cam0 and swap the plain imx708 line for ov64b40.
+# ARK Boson Adapter: the same, with boson in place of ov64b40. Rev 1.0 swaps the Boson's
+# UART, so its cable to the UART2 connector crosses pins 2 and 3.
 #dtoverlay=ov64b40,cam0
+#dtoverlay=boson,cam0
 #dtoverlay=i2c-gpio,i2c_gpio_sda=7,i2c_gpio_scl=6,bus=7
 
 # I2C: enable the ARM I2C (GPIO2/3) so the external INA226 power monitor is reachable.
@@ -77,5 +80,6 @@ TARGET_MODULES=(i2c-dev)
 TARGET_UNITS=(ark-imx708-reset.service)
 
 # Out-of-tree drivers from drivers/, built with DKMS and their overlays installed by
-# install_drivers.sh. ov64b40 is the FLIR Hadron's visible camera (ARK Hadron Adapter).
-TARGET_DRIVERS=(ov64b40)
+# install_drivers.sh. ov64b40 is the FLIR Hadron's visible camera (ARK Hadron Adapter);
+# boson is the FLIR Boson+ MIPI thermal camera (ARK Boson Adapter).
+TARGET_DRIVERS=(ov64b40 boson)

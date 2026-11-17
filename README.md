@@ -69,6 +69,40 @@ The `justapi-cm5` image carries the driver (`ov64b40`, built with DKMS) and over
 - **Frame sync:** the Hadron's sync line runs through R11 to CAM1 pin 18 (GPIO35), and from there through R12 to the IMU's FSYNC pin, so the IMU tags the Boson's sync pulses only with both fitted. R12 isn't fitted by default. The Pi only reads GPIO35; apart from the CM5 holding it low during boot, nothing on the Pi drives it. As sync master, the Boson sends a 1.8 V pulse 50 to 100 ns wide, with rounded edges, for each of its 60 Hz core frames; a scope needs a fast single-shot trigger to show it.
 - **R11 and the CM5's pull-up:** the CM5 pulls GPIO35 up to 3.3 V through 15 kΩ on the module, and no setting removes it. The Boson holds the sync line low at power-on and pulses it as sync master, so in normal use the pull-up only loads its output: on a scope, the pulses on CAM1 look the same as on CAM2, which has no pull-up. The line rises above the Hadron's 2.1 V input limit only when nothing drives it: for a moment during boot, with the Boson as a sync slave, or with the Hadron unpowered while the CM5 is on. The 1.8 V inputs on the line then clamp it at about 2.2 V, so about 75 µA flows into them. A divider or a larger R11 would also flatten the Boson's narrow pulses, so staying in spec would need a one-way buffer on the adapter, which would also stop a host from driving the line.
 
+### ARK Boson Adapter on the Just A Pi
+
+The `justapi-cm5` image carries the driver (`boson`, built with DKMS) and overlay for a FLIR Boson+ with the MIPI interface.
+
+- **Cabling:** the CSI ribbon goes to CAM1 (J2) or CAM2 (J1). J3 goes to the UART2 connector. Rev 1.0 adapters swap the Boson's UART TX and RX, so the cable crosses pins 2 and 3; pins 4 and 5 run straight, which puts the adapter's SCL and SDA on GPIO6 and GPIO7.
+- **`config.txt`:** in `/boot/firmware/config.txt`, change `dtoverlay=imx708,cam0` to `dtoverlay=boson,cam0` for CAM1, or `dtoverlay=imx708` to `dtoverlay=boson` for CAM2. Then change `dtoverlay=uart2,ctsrts` to `dtoverlay=uart2` and uncomment `dtoverlay=i2c-gpio,i2c_gpio_sda=7,i2c_gpio_scl=6,bus=7`.
+- **Video:** 640x512 at 60 fps on two lanes at 492 Mbps, either colourised by the Boson (UYVY) or as pre-AGC 14-bit data. The driver controls the Boson over the CSI connector's I2C, so the video doesn't need J3. libcamera doesn't support the camera, so `rpicam-*` and ARK-OS's RTSP server don't see it. Set up the media graph and capture with V4L2:
+
+  ```bash
+  for m in /dev/media*; do media-ctl -d $m -p | grep -q ': boson ' && MEDIA=$m; done
+  SENSOR=$(media-ctl -d $MEDIA -p | sed -n 's/^- entity [0-9]*: \(boson [^ ]*\) .*/\1/p')
+  VIDEO=$(media-ctl -d $MEDIA -e rp1-cfe-csi2_ch0)
+  F='fmt:UYVY8_1X16/640x512 field:none colorspace:srgb'
+  media-ctl -d $MEDIA -l '"csi2":4 -> "rp1-cfe-csi2_ch0":0 [1]'
+  media-ctl -d $MEDIA -V "\"$SENSOR\":0 [$F], \"csi2\":0 [$F], \"csi2\":4 [$F]"
+  v4l2-ctl -d $VIDEO --set-fmt-video=width=640,height=512,pixelformat=UYVY
+  v4l2-ctl -d $VIDEO --stream-mmap --stream-count=60 --stream-to=frames.uyvy
+  ```
+
+  To stream it as RTP H.264 to port 5600, which QGroundControl's UDP h.264 video source plays, run this after the setup above, with your ground station's address. The Pi 5 has no H.264 encoder, so x264 encodes on the CPU; this takes about a third of one core. Keep the `I420` and `framerate` caps: without them, x264 gets 4:4:4 video, which most decoders can't play, and assumes 120 fps.
+
+  ```bash
+  gst-launch-1.0 v4l2src device=$VIDEO ! video/x-raw,format=UYVY,width=640,height=512,framerate=60/1 \
+    ! videoconvert ! video/x-raw,format=I420 \
+    ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=4000 key-int-max=60 \
+    ! rtph264pay config-interval=1 pt=96 ! udpsink host=<ground station> port=5600 sync=false
+  ```
+
+- **14-bit:** use `F='fmt:Y14_1X14/640x512 field:none colorspace:raw xfer:none ycbcr:601 quantization:full-range'` and `pixelformat=Y14P`. The Pi 5's CSI-2 receiver doesn't unpack RAW14, even though its driver offers to, so unpack it in software. Every 7 bytes hold 4 pixels: first each pixel's top 8 bits, then a 24-bit little-endian word with each pixel's low 6 bits, the first pixel's in bits 0 to 5. The Boson+ refuses 16-bit output over MIPI.
+- **Boson settings:** the driver changes only the video output, and saves nothing to the Boson's flash. Palette, flat-field correction and frame sync go over the Boson's UART, `/dev/ttyAMA2` at 921600 8N1, with FLIR's protocol. The factory palette is white hot, which looks grey.
+- **IMU:** the adapter's ICM-45686 is at `0x68` on `/dev/i2c-7`.
+- **Frame sync:** the Boson's `EXT_SYNC` runs through R12 to the CSI connector's pin 18 and through R13 to the IMU's FSYNC pin. Rev 1.0 adapters leave R13 unfitted. With the Boson as sync master (FLIR function `0x00050098`, 1), it pulses once per 60 Hz frame. On CAM1, pin 18 is GPIO35, which the Pi only reads. CAM2 has no pin 18, so there only the IMU sees the pulses. With sync off the Boson holds the line low; the CM5's 15 kΩ pull-up raises it above the Boson's 1.8 V only when nothing drives it, as with the Hadron above.
+- **Reload and errors:** reboot to reload the driver, as with the Hadron. `rp1-cfe` also oopses when a sensor fails to start streaming, so if the Boson rejects the stream setup, the driver logs `stream start failed` to the kernel log and the capture waits without frames.
+
 ## Targets
 
 A target is a carrier × compute module, `targets/<name>.target`:
