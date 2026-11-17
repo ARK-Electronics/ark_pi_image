@@ -38,7 +38,11 @@ for driver in "${TARGET_DRIVERS[@]}"; do
     fi
     sudo rm -rf "$ROOTFS_DIR/usr/src/$driver-$version"
     sudo install -d "$ROOTFS_DIR/usr/src/$driver-$version"
-    sudo cp "$source_dir"/dkms.conf "$source_dir"/Makefile "$source_dir"/*.c "$source_dir"/*.h \
+    # A driver need not have headers; without nullglob an unmatched *.h stays literal.
+    shopt -s nullglob
+    sources=("$source_dir"/*.c "$source_dir"/*.h)
+    shopt -u nullglob
+    sudo cp "$source_dir"/dkms.conf "$source_dir"/Makefile "${sources[@]}" \
         "$ROOTFS_DIR/usr/src/$driver-$version/"
     in_chroot dkms add -m "$driver" -v "$version"
     # build is an absolute symlink into the rootfs's /usr/src, so test it from inside.
