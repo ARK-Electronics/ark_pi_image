@@ -1,0 +1,26 @@
+#!/bin/sh
+# A CM5 drives the CM4's nEXTRST pin, which resets the Pi6X's USB hub, from its bootloader
+# firmware. With bootloaders before 2025-11-27 (2025-06-13 on mid-2025 modules) the hub never
+# enumerates: no FC over USB, no USB ports. Raspberry Pi OS's own rpi-eeprom-update.service only
+# updates bootloaders older than 2025-05-08, so it leaves those alone. One attempt per module,
+# so a failed update can't reboot-loop.
+set -eu
+
+# 2025-11-27 (999d0ec9), the oldest bootloader tested on the Pi6X.
+MINIMUM=1764250826
+
+grep -q bcm2712 /proc/device-tree/compatible || exit 0
+current=$(vcgencmd bootloader_version | awk '$1 == "timestamp" {print $2}')
+[ "${current:-0}" -ge "$MINIMUM" ] && exit 0
+
+serial=$(tr -d '\0' < /proc/device-tree/serial-number)
+attempted=/var/lib/ark/bootloader-update-$serial
+if [ -e "$attempted" ]; then
+    echo "bootloader $current is still older than $MINIMUM after an update; not retrying" >&2
+    exit 1
+fi
+mkdir -p /var/lib/ark
+echo "$current" > "$attempted"
+echo "bootloader $current is older than $MINIMUM; updating and rebooting"
+rpi-eeprom-update -a
+systemctl --no-block reboot

@@ -90,8 +90,14 @@ in_chroot apt-get update
 # MAVSDK is not installed separately: ark-os bundles its own under
 # /usr/lib/ark-os/mavsdk (ARK-OS#75). A pre-bundling ark-os deb fails here with an
 # unresolvable libmavsdk-dev Depends — fix by bumping ARK_OS_VERSION.
-echo "==> Installing ${ARK_OS_PKG} ($ARK_OS_DEB)"
-in_chroot "${APT_INSTALL[@]}" "/tmp/$ARK_OS_DEB"
+# ark-os pulls the archive's newest libcamera. Raspberry Pi breaks libcamera's ABI without a
+# soname bump or a Breaks, so rpicam-apps has to upgrade in the same transaction.
+echo "==> Installing ${ARK_OS_PKG} ($ARK_OS_DEB) and rpicam-apps"
+in_chroot "${APT_INSTALL[@]}" "/tmp/$ARK_OS_DEB" rpicam-apps-core rpicam-apps-lite
+
+# Binding every symbol at load fails the build on a camera stack apt left mismatched.
+echo "==> Checking rpicam-apps loads against the installed libcamera"
+in_chroot env LD_BIND_NOW=1 rpicam-hello --version
 
 echo "==> Verifying ${ARK_OS_PKG} is fully configured"
 status=$(in_chroot dpkg-query -W -f='${Status}' "$ARK_OS_PKG" 2>/dev/null || true)

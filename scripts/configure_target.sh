@@ -22,6 +22,7 @@ CONFIG_TXT_APPEND="${CONFIG_TXT_APPEND:-}"
 declare -p CONFIG_TXT_DISABLE >/dev/null 2>&1 || CONFIG_TXT_DISABLE=()
 declare -p TARGET_MODULES >/dev/null 2>&1 || TARGET_MODULES=()
 declare -p TARGET_UNITS >/dev/null 2>&1 || TARGET_UNITS=()
+declare -p TARGET_BIN >/dev/null 2>&1 || TARGET_BIN=()
 
 in_chroot() { sudo chroot "$ROOTFS_DIR" "$@"; }
 
@@ -80,6 +81,12 @@ if ((${#TARGET_MODULES[@]})); then
         | sudo tee "$ROOTFS_DIR/etc/modules-load.d/${TARGET}.conf" >/dev/null
     echo "==> Autoload modules: ${TARGET_MODULES[*]}"
 fi
+
+# Carrier-specific scripts, from targets/bin/, for those units to run.
+for script in "${TARGET_BIN[@]}"; do
+    sudo install -m 755 "$REPO_DIR/targets/bin/$script" "$ROOTFS_DIR/usr/local/sbin/$script"
+    echo "==> Installed /usr/local/sbin/$script"
+done
 
 # Carrier-specific systemd units, from targets/units/, enabled at boot.
 for unit in "${TARGET_UNITS[@]}"; do
