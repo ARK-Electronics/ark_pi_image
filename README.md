@@ -41,6 +41,7 @@ The default camera is the Raspberry Pi Camera Module 3 (IMX708). For another cam
 
 - **Just A Pi, CAM2:** the carrier ties that connector's camera power enable high, so a Camera Module 3 there misses its power-on reset. `ark-imx708-reset.service` resets it over I2C at boot.
 - **Pi6X with a CM5:** `dds-agent` defaults to `/dev/ttyAMA4`; set it to `/dev/ttyAMA3` on ARK-OS's Services page.
+- **Pi6X with a CM5, bootloader:** with a CM5 bootloader older than 2025-11-27 the carrier's USB hub never enumerates, and Raspberry Pi OS doesn't update the bootloader. `ark-cm5-bootloader-update.service` installs the image's default bootloader at boot, keeping the module's bootloader config, and reboots once.
 
 ### ARK Hadron Adapter on the Just A Pi
 
@@ -115,14 +116,15 @@ A target is a carrier × compute module, `targets/<name>.target`:
 | `CONFIG_TXT_APPEND` | Block appended after `[all]` |
 | `TARGET_MODULES` | Kernel modules to load at boot |
 | `TARGET_UNITS` | systemd units from `targets/units/` to install and enable |
+| `TARGET_BIN` | Scripts from `targets/bin/` to install in `/usr/local/sbin` |
 | `TARGET_DRIVERS` | Drivers from `drivers/` to build with DKMS, with their overlays |
 
 ## Releases
 
 Each carrier has its own tag: `pi6x-v<major>.<minor>.<patch>` or `just-a-pi-v<major>.<minor>.<patch>`.
 
-1. Pushing the tag runs **Release**, which builds every `targets/<carrier>-*.target` (`just-a-pi` builds `justapi-*`) and keeps the compressed images as run artifacts.
-2. Bench-test those files: `gh run download <run-id>`.
-3. Run **Publish to downloads.arkelectron.com** with the tag. It uploads to `downloads.arkelectron.com/pi/<carrier>/<version>/` and makes that version `latest/`.
+1. Push the tag. **Release** builds every `targets/<carrier>-*.target` (`just-a-pi` builds `justapi-*`) and publishes the images as an unlisted draft at `downloads.arkelectron.com/dev/pi/<carrier>/<version>/`. A draft expires 90 days after upload.
+2. Bench-test the draft. In `ark-bench --debug`, write a card with the carrier's Fixture SD Card product and **Write latest DRAFT image** ticked, then pass the carrier's production test on it. A release too simple to need the bench skips this step.
+3. Promote it: `gh workflow run promote.yml -f tag=<tag>`. **Promote** copies the draft byte for byte to `pi/<carrier>/<version>/` and makes that version `latest/`.
 
-Release can also run by hand on a branch to build test images; those runs are never published.
+Release can also run by hand on a branch to build test images. Those stay run artifacts and are never published.

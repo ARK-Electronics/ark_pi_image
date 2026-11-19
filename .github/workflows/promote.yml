@@ -1,0 +1,54 @@
+# Releases a bench-tested draft: copies dev/pi/<carrier>/<version>/ byte for byte into the
+# carrier's release folder and points latest/ at it.
+
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose draft passed bench testing, e.g. pi6x-v1.1.1
+        required: true
+
+concurrency:
+  group: promote-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: downloads
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ARK-Electronics/downloads
+          path: downloads
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-1
+          mask-aws-account-id: true
+
+      - name: Promote
+        env:
+          DOWNLOADS_BUCKET: ${{ vars.DOWNLOADS_BUCKET }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^(pi6x|just-a-pi)-(v[0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::$TAG is not a release tag"; exit 1; }
+          product=${BASH_REMATCH[1]}
+          version=${BASH_REMATCH[2]}
+
+          # A rerun after a later step failed finds the release folder already written
+          if ! aws s3api head-object --bucket "$DOWNLOADS_BUCKET" --key "pi/$product/$version/SHA256SUMS" >/dev/null 2>&1; then
+            downloads/downloads.py release "dev/pi/$product/$version" "pi/$product/$version"
+          fi
+          downloads/downloads.py promote "pi/$product/$version" "pi/$product/latest"
+          downloads/downloads.py index
+
+          echo "Released https://downloads.arkelectron.com/pi/$product/$version/" >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,6 @@
-# Builds a carrier's golden images when its release tag is pushed and keeps them as this
-# run's artifacts. They reach downloads.arkelectron.com only through publish.yml, after
-# bench testing. Run by hand on a branch to build a carrier's images for testing.
+# Builds a carrier's golden images. A release tag's images are published as an unlisted draft
+# on downloads.arkelectron.com for bench testing, and promote.yml releases that draft byte for
+# byte. Run by hand on a branch to build a carrier's images for testing; those are never published.
 
 name: Release
 
@@ -20,6 +20,8 @@ jobs:
   targets:
     runs-on: ubuntu-24.04
     outputs:
+      product: ${{ steps.targets.outputs.product }}
+      version: ${{ steps.targets.outputs.version }}
       targets: ${{ steps.targets.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +32,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_REF_TYPE" = tag ]; then
-            [[ "$GITHUB_REF_NAME" =~ ^(pi6x|just-a-pi)-v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            [[ "$GITHUB_REF_NAME" =~ ^(pi6x|just-a-pi)-(v[0-9]+\.[0-9]+\.[0-9]+)$ ]] \
               || { echo "::error::$GITHUB_REF_NAME: expected pi6x-v<major>.<minor>.<patch> or just-a-pi-v<major>.<minor>.<patch>"; exit 1; }
             PRODUCT=${BASH_REMATCH[1]}
+            echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
           fi
+          echo "product=$PRODUCT" >> "$GITHUB_OUTPUT"
           case "$PRODUCT" in
             pi6x) prefix=pi6x ;;
             just-a-pi) prefix=justapi ;;
@@ -72,3 +76,49 @@ jobs:
           path: staging/${{ matrix.target }}-*-ark-os.img.xz
           if-no-files-found: error
           compression-level: 0
+
+  draft:
+    if: github.ref_type == 'tag'
+    needs: [targets, build]
+    runs-on: ubuntu-latest
+    environment: downloads
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: draft
+          merge-multiple: true
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ARK-Electronics/downloads
+          path: downloads
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-1
+          mask-aws-account-id: true
+
+      - name: Publish draft
+        env:
+          DOWNLOADS_BUCKET: ${{ vars.DOWNLOADS_BUCKET }}
+          PRODUCT: ${{ needs.targets.outputs.product }}
+          VERSION: ${{ needs.targets.outputs.version }}
+        run: |
+          set -euo pipefail
+          (cd draft && sha256sum -- *.img.xz > SHA256SUMS)
+          downloads/downloads.py publish draft "dev/pi/$PRODUCT/$VERSION"
+          echo "$VERSION" > "$RUNNER_TEMP/VERSION"
+          downloads/downloads.py put "$RUNNER_TEMP/VERSION" "dev/pi/$PRODUCT/draft/VERSION"
+
+          # dev/ has no folder pages, so link each file
+          {
+            echo "Draft $VERSION:"
+            for image in draft/*.img.xz; do echo "- https://downloads.arkelectron.com/dev/pi/$PRODUCT/$VERSION/${image#draft/}"; done
+            echo
+            echo "Bench test: in \`ark-bench --debug\`, write a card with the carrier's Fixture SD Card product and **Write latest DRAFT image** ticked, then pass the carrier's production test on it. After that: \`gh workflow run promote.yml -f tag=$GITHUB_REF_NAME\`"
+          } >> "$GITHUB_STEP_SUMMARY"
