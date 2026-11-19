@@ -43,6 +43,33 @@ The default camera is the Raspberry Pi Camera Module 3 (IMX708). For another cam
 - **Pi6X with a CM5:** `dds-agent` defaults to `/dev/ttyAMA4`; set it to `/dev/ttyAMA3` on ARK-OS's Services page.
 - **Pi6X with a CM5, bootloader:** with a CM5 bootloader older than 2025-11-27 the carrier's USB hub never enumerates, and Raspberry Pi OS doesn't update the bootloader. `ark-cm5-bootloader-update.service` installs the image's default bootloader at boot, keeping the module's bootloader config, and reboots once.
 
+### ARK Hadron Adapter on the Just A Pi
+
+The `justapi-cm5` image carries the driver (`ov64b40`, built with DKMS) and overlay for the FLIR Hadron 640R's visible camera.
+
+- **Cabling:** the CSI ribbon goes to CAM1 (J2) and the USB to the USB 2.0 JST-GH. J3 goes to the UART2 connector with a straight 6-pin JST-GH cable, which puts the adapter's SCL and SDA on GPIO6 and GPIO7.
+- **`config.txt`:** in `/boot/firmware/config.txt`, change `dtoverlay=imx708,cam0` to `dtoverlay=ov64b40,cam0`, change `dtoverlay=uart2,ctsrts` to `dtoverlay=uart2`, and uncomment `dtoverlay=i2c-gpio,i2c_gpio_sda=7,i2c_gpio_scl=6,bus=7`. UART2 keeps TX and RX.
+- **CAM2 (J1):** the Hadron works there too. Keep `dtoverlay=imx708,cam0` and change `dtoverlay=imx708` to `dtoverlay=ov64b40`. The carrier ties CAM2's pin 17 high, so the Hadron's reset is always released. CAM2 has no pin 18, so the Pi can't read the sync pulses there; the IMU still tags them through R11 and R12.
+- **Visible camera:** 2304x1728 RAW10 (RGGB) at 20 fps on two lanes at 799.2 Mbps. The Pi 5's CSI-2 receiver takes at most 1.5 Gbps per lane, which rules out the Jetson driver's modes; this one comes from the Ingenic T40 SDK's table. libcamera doesn't support the sensor (no camera helper or tuning file), so `rpicam-*` and ARK-OS's RTSP server don't see it. Capture raw frames with V4L2; device numbers depend on probe order, so look them up by name:
+
+  ```bash
+  for m in /dev/media*; do media-ctl -d $m -p | grep -q ': ov64b40 ' && MEDIA=$m; done
+  SENSOR=$(media-ctl -d $MEDIA -e "$(media-ctl -d $MEDIA -p | sed -n 's/^- entity [0-9]*: \(ov64b40 [^ ]*\) .*/\1/p')")
+  VIDEO=$(media-ctl -d $MEDIA -e rp1-cfe-csi2_ch0)
+  F='fmt:SRGGB10_1X10/2304x1728 field:none colorspace:raw xfer:none ycbcr:601 quantization:full-range'
+  media-ctl -d $MEDIA -l '"csi2":4 -> "rp1-cfe-csi2_ch0":0 [1]'
+  media-ctl -d $MEDIA -V "\"csi2\":0 [$F], \"csi2\":4 [$F]"
+  v4l2-ctl -d $VIDEO --set-fmt-video=width=2304,height=1728,pixelformat=pRAA
+  v4l2-ctl -d $VIDEO --stream-mmap --stream-count=20 --stream-to=frames.raw
+  ```
+
+  Exposure (lines), analogue gain (0x100 = 1x), vertical blanking (998 for 20 fps, down to 128 for 29.4 fps) and a colour-bar test pattern are controls on the sensor's subdevice: `v4l2-ctl -d $SENSOR -l`. To reload the driver, reboot: unloading and reloading a sensor module oopses the Pi kernel's CSI-2 receiver driver (`rp1-cfe`).
+- **Thermal camera:** the Boson is a UVC camera ("FLIR Video") at 30 fps.
+- **IMU:** the adapter's ICM-45686 is at `0x68` on `/dev/i2c-7`; the Hadron's own IMU answers at `0x28`.
+- **Reset:** CAM1 pin 17 is the Hadron's reset, which its Boson shares. The overlay holds it released for good, so no camera driver powering down resets the Boson.
+- **Frame sync:** the Hadron's sync line runs through R11 to CAM1 pin 18 (GPIO35), and from there through R12 to the IMU's FSYNC pin, so the IMU tags the Boson's sync pulses only with both fitted. R12 isn't fitted by default. The Pi only reads GPIO35; apart from the CM5 holding it low during boot, nothing on the Pi drives it. As sync master, the Boson sends a 1.8 V pulse 50 to 100 ns wide, with rounded edges, for each of its 60 Hz core frames; a scope needs a fast single-shot trigger to show it.
+- **R11 and the CM5's pull-up:** the CM5 pulls GPIO35 up to 3.3 V through 15 kΩ on the module, and no setting removes it. The Boson holds the sync line low at power-on and pulses it as sync master, so in normal use the pull-up only loads its output: on a scope, the pulses on CAM1 look the same as on CAM2, which has no pull-up. The line rises above the Hadron's 2.1 V input limit only when nothing drives it: for a moment during boot, with the Boson as a sync slave, or with the Hadron unpowered while the CM5 is on. The 1.8 V inputs on the line then clamp it at about 2.2 V, so about 75 µA flows into them. A divider or a larger R11 would also flatten the Boson's narrow pulses, so staying in spec would need a one-way buffer on the adapter, which would also stop a host from driving the line.
+
 ## Targets
 
 A target is a carrier × compute module, `targets/<name>.target`:
@@ -56,6 +83,7 @@ A target is a carrier × compute module, `targets/<name>.target`:
 | `TARGET_MODULES` | Kernel modules to load at boot |
 | `TARGET_UNITS` | systemd units from `targets/units/` to install and enable |
 | `TARGET_BIN` | Scripts from `targets/bin/` to install in `/usr/local/sbin` |
+| `TARGET_DRIVERS` | Drivers from `drivers/` to build with DKMS, with their overlays |
 
 ## Releases
 
